@@ -188,10 +188,25 @@
   .recrow:hover{color:#8c2f1b}
   .rb{font-size:11px;padding:1px 7px;border-radius:4px;color:#fff;flex-shrink:0}
   .rb.冲{background:#d85a30}.rb.稳{background:#e0a32e}.rb.保{background:#1d9e75}
-  .recrow .pr{margin-left:auto;font-size:12px;color:#7d6536}
+  .recrow .pr{margin-left:auto;font-size:12px;color:#7d6536;display:flex;align-items:center;gap:4px;white-space:nowrap}
+  .recrow .rname{font-weight:600;color:#4a3414;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .recrow .rtier{font-size:10px;padding:0 4px;border:1px solid #c5ab7c;border-radius:3px;color:#7d6536;background:#f7e8d6}
+  .recrow .rmajor{font-size:11px;color:#7d6536;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .recrow .d\+{color:#d85a30;font-style:normal;font-weight:600;font-size:11px}
+  .recrow .d-{color:#1d9e75;font-style:normal;font-weight:600;font-size:11px}
   .tourbtn{margin-top:12px;width:100%;padding:9px 0;border:none;border-radius:8px;background:#8c2f1b;color:#f7e8d6;
     font:500 14px "Kaiti SC","STKaiti","KaiTi",serif;letter-spacing:3px;cursor:pointer}
   .tourbtn:hover{background:#a13a22}
+  .rp-tools{display:flex;gap:6px;margin:8px 0 4px;flex-wrap:wrap}
+  .rptool{font-size:12px;padding:5px 10px;border:1px solid #c5ab7c;background:rgba(157,47,27,.06);color:#7d6536;border-radius:6px;cursor:pointer;font-family:inherit}
+  .rptool:hover{background:rgba(157,47,27,.14);color:#8c2f1b}
+  .samerank-panel{margin:8px 0;padding:8px 10px;background:rgba(157,47,27,.04);border:1px dashed #c5ab7c;border-radius:6px;font-size:12px;color:#4a3414;max-height:280px;overflow:auto}
+  .samerank-row{display:flex;align-items:center;gap:6px;padding:4px 0;border-bottom:1px dotted #e0d0aa}
+  .samerank-row:last-child{border:0}
+  .samerank-row .nm{font-weight:600;color:#4a3414;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .samerank-row .tier{font-size:10px;padding:0 4px;border:1px solid #c5ab7c;border-radius:3px;color:#7d6536;background:#f7e8d6}
+  .samerank-row .ss{color:#7d6536;font-size:11px}
+  .samerank-row .diff{color:#7d6536;font-size:11px}
   .recform{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
   .rfrow{display:flex;gap:6px}
   .recform select,.recform input{flex:1;min-width:0;padding:7px 11px;border:1px solid var(--gold-soft);border-radius:10px;
@@ -813,6 +828,11 @@
     </div>
   </div>
   <p class="sub" id="rp-status">选择省份科类,输入分数或位次</p>
+  <div class="rp-tools">
+    <button type="button" class="rptool" id="rp-samerank">📊 同分去向</button>
+    <button type="button" class="rptool" id="rp-ranktbl">📈 一分一段</button>
+    <button type="button" class="rptool" id="rp-fillfav" title="将冲稳保前 8+8+8 加入志愿表">⭐ 一键填志愿</button>
+  </div>
   <div id="reclist"></div>
   <button class="tourbtn" id="tourbtn" style="display:none">开 始 巡 游</button>
   <p class="dim" style="margin:8px 0 0">数据来自各省考试院等公开信息整理,仅供参考</p>
@@ -1760,9 +1780,11 @@ function showCard(u){
     ${(u.mp||u.dp)?`<p class="dim" style="margin:2px 0">${u.mp?`硕士点 ${u.mp}`:""}${u.mp&&u.dp?" · ":""}${u.dp?`博士点 ${u.dp}`:""}</p>`:""}
     ${u.m?`<p class="dim" style="margin:4px 0;line-height:1.5">${u.m}</p>`:""}
     <p class="dim" id="card-intro" style="margin-top:6px;display:none"></p>
+    <div id="card-school-stats" style="display:none;margin-top:6px;padding:6px 8px;background:rgba(245,238,220,.5);border-radius:4px"></div>
+    <div id="card-history" style="display:none;margin-top:6px"></div>
     <div id="card-trend"></div>
     <div class="card-btns">${cardFavHTML({n:u.n,t:u.t,c:u.c||u.p,ll:u.ll})}${cardCmpHTML({n:u.n,t:u.t,c:u.c||u.p,ll:u.ll})}</div>
-    <p class="dim">※ 教育部名单 · 第四轮学科评估${u.approx?" · 坐标为城市近似":""}</p>`;
+    <p class="dim">※ 教育部名单 · 第四轮学科评估 · 数据来自各省考试院等公开信息整理,仅供参考${u.approx?" · 坐标为城市近似":""}</p>`;
   card.style.display="block";document.body.classList.add("has-card");
   selectMarker(u.n);loadTrend(u.n);
   (async()=>{try{
@@ -1778,6 +1800,33 @@ function showCard(u){
       let wrap=document.getElementById("card-disc");
       if(!wrap){wrap=document.createElement("div");wrap.id="card-disc";wrap.className="tags";wrap.style.marginTop="4px";const trEl=document.getElementById("card-trend");if(trEl && trEl.parentNode)trEl.parentNode.insertBefore(wrap,trEl);}
       wrap.innerHTML=d.disc.map(function(x){return `<span class="tag">` + x[0] + " " + x[1] + `</span>`}).join("");
+    }
+    // 学校统计(招生/就业/调剂风险/学费)
+    if(d.schoolStats){
+      const ss = d.schoolStats;
+      const statsEl = document.getElementById("card-school-stats");
+      if(statsEl){
+        const riskColor = ss.risk==="低"?"#5b8a3f":ss.risk==="中"?"#b58a2e":"#a8473b";
+        statsEl.innerHTML = `
+          <div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:#4a3414">
+            <span>📊 招生约 <b>${ss.enroll||"-"}人</b></span>
+            <span>💼 就业率 <b>${ss.employment||"-"}\%</b></span>
+            <span>💰 学费 <b>${ss.tuition||"-"}元/年</b></span>
+            <span>⚠️ 调剂风险 <b style="color:${riskColor}">${ss.risk||"-"}风险</b></span>
+            ${d.schoolScoreInProv?`<span>📍 你省当年等效录取 <b>${d.schoolScoreInProv}分</b></span>`:""}
+          </div>
+        `;
+        statsEl.style.display = "block";
+      }
+    }
+    // 历年分数 (上一个同学上不上)
+    if(d.history && d.history.length){
+      const histEl = document.getElementById("card-history");
+      if(histEl){
+        const rows = d.history.map(h=>`<div style="display:flex;gap:12px;font-size:12px"><span style="color:#7a5f33;min-width:36px">${h.year}</span><span style="color:#4a3414">平均录取线 <b>${h.score}分</b> · 约前 <b>${(h.min_rank||0).toLocaleString()}名</b></span></div>`).join("");
+        histEl.innerHTML = `<div style="font-size:12px;color:#7a5f33;margin-bottom:4px">📈 历年录取参考</div>${rows}`;
+        histEl.style.display = "block";
+      }
     }
     // 合成标签(后端提供的 tags:类型/排名/硕博点/保研率 等)→ 追加到主 tags 行
     if(d.tags && d.tags.length){
@@ -1935,6 +1984,9 @@ function drawRankChart(data,userScore){
   const W=680,H=360,mL=46,mR=14,mT=16,mB=26,iw=W-mL-mR,ih=H-mT-mB;
   const ys=(data.years||[]).filter(y=>y.pts&&y.pts.length);
   if(!ys.length)return '<p class="dim" style="padding:24px 0;text-align:center">该省 / 科类暂无一分一段数据</p>';
+  // 过滤掉无效区(rank>=200000 或 0: 低于本一线没意义)
+  ys.forEach(y=>{y.pts=y.pts.filter(p=>p[1]>0&&p[1]<200000);});
+  if(!ys[0].pts.length)return '<p class="dim" style="padding:24px 0;text-align:center">该省 / 科类暂无本科一段数据</p>';
   let smin=1e9,smax=-1e9,rmax=0;
   ys.forEach(y=>y.pts.forEach(p=>{if(p[0]<smin)smin=p[0];if(p[0]>smax)smax=p[0];if(p[1]>rmax)rmax=p[1];}));
   const X=s=>mL+(s-smin)/((smax-smin)||1)*iw,Y=r=>mT+(r/(rmax||1))*ih;
@@ -2346,7 +2398,7 @@ async function runRecommend(){
     renderRecResult(r,document.getElementById("reclist"));
     document.getElementById("tourbtn").style.display=RECS.length?"block":"none";
     map.flyTo({center:[112,32],zoom:4.3,pitch:50,bearing:-8,duration:1600,curve:1.42});
-  }catch(e){st.textContent="⚠️ 无法连接推荐服务";}
+  }catch(e){st.textContent="⚠️ 推荐服务连接超时, 请重试或检查网络"; console.warn("rec err",e);}
 }
 // 渲染冲稳保列表(我的推荐 与 测评合并结果 共用),设置 RECS、点亮地图、行点击飞行
 function renderRecResult(r,listEl){
@@ -2357,16 +2409,21 @@ function renderRecResult(r,listEl){
     r.bands[b].slice(0,8).forEach(it=>{
       RECS.push({n:it.uni,ll:it.ll,band:b});
       const fit={n:it.uni,major:it.major,band:b,t:it.tier,ll:it.ll},k=favKey(fit);
-      html+=`<div class="recrow" data-uni="${it.uni}" data-ll="${it.ll||''}">
-        <span class="rb ${b}">${b}</span>${it.uni.slice(0,9)}·${it.major.slice(0,8)}${rkgBadge(it.grade)}
-        <span class="pr">${it.minRank.toLocaleString()}${it.note?`<small>${it.note}</small>`:""}</span>
+      const ss = it.schoolScoreInProv || it.schoolScore || 0;
+      const us = (window.GK && window.GK.score) || 0;
+      const diff = ss && us ? (ss - us) : 0;
+      const diffStr = ss && us ? (diff>0?`+${diff}`:`${diff}`) : "";
+      const tierBadge = it.tier === "985" ? "985" : it.tier === "211" ? "211" : it.tier === "dfc" ? "双一流" : "";
+      html+=`<div class="recrow" data-uni="${it.uni}" data-ll="${JSON.stringify(it.ll||[])}">
+        <span class="rb ${b}">${b}</span><span class="rname">${it.uni.slice(0,8)}</span>${tierBadge?`<span class="rtier">${tierBadge}</span>`:""}<span class="rmajor">${it.major.slice(0,6)}</span>
+        <span class="pr">${ss?`${ss}分`:""}${diffStr?` <em class="d${diff>=0?"+":"-"}">${diffStr}</em>`:""}</span>
         <button class="rec-fav${favHas(k)?" on":""}" data-k="${k}" data-it='${JSON.stringify(fit).replace(/'/g,"&#39;")}' onclick="event.stopPropagation();cardFavClick(this)" title="加入志愿表">★</button></div>`;
     });
   }
   listEl.innerHTML=html;
   listEl.querySelectorAll(".recrow").forEach(row=>row.addEventListener("click",()=>{
     userTouched=true;
-    const ll=row.dataset.ll?row.dataset.ll.split(",").map(Number):null;
+    let ll=null;try{ll=JSON.parse(row.dataset.ll||"null");}catch(_){ll=null;}
     if(ll&&ll[0])map.flyTo({center:ll,zoom:8.5,pitch:55,bearing:10,duration:2000,curve:1.42});
     showUniCard(row.dataset.uni);
   }));
@@ -2467,7 +2524,7 @@ async function qzRecommend(){
     st.textContent=`位次约 ${rec.rank.toLocaleString()} · 限定你契合的 ${(mc||[]).join("/")}${tot<6?" · 此分段较薄,可参看「我的推荐」全部":""}`;
     renderRecResult(rec,document.getElementById("qz-reclist"));
     map.flyTo({center:[112,32],zoom:4.3,pitch:50,bearing:-8,duration:1600,curve:1.42});
-  }catch(e){st.textContent="⚠️ 无法连接推荐服务";}
+  }catch(e){st.textContent="⚠️ 推荐服务连接超时, 请重试或检查网络"; console.warn("rec err",e);}
 }
 // ---------- 视角旋转模式 ----------
 let rotMode=false,rotStart=null;
@@ -2527,6 +2584,86 @@ cv.addEventListener("wheel",_nudgeQ,{passive:true});
 document.getElementById("qz-start").addEventListener("click",qzStart);
 document.getElementById("rp-go").addEventListener("click",runRecommend);
 document.getElementById("rp-score").addEventListener("keydown",e=>{if(e.key==="Enter")runRecommend();});
+
+// 同分去向: 查与用户同位次的学校(允许去到20%误差)
+document.getElementById("rp-samerank")?.addEventListener("click",async()=>{
+  const prov=document.getElementById("rp-prov").value;
+  const subj=document.getElementById("rp-subj").value;
+  const val=+document.getElementById("rp-score").value;
+  if(!val){toast("请先输入分数");return;}
+  const mode=recMode;
+  let rank=0,score=val;
+  if(mode==="rank"){rank=val;score=0;}
+  else{rank=0;}
+  // 调 recommend 拿 rank (顺便校验分数)
+  const st=document.getElementById("rp-status");
+  st.textContent="查询同分去向…";
+  let r;
+  try{
+    const qp=mode==="rank"?`rank=${val}`:`score=${val}`;
+    r=await(await fetch(`${API}/api/recommend?prov=${encodeURIComponent(prov)}&subj=${encodeURIComponent(subj)}&${qp}`)).json();
+  }catch(e){st.textContent="⚠️ 查询失败,请重试";return;}
+  if(r.error){st.textContent="⚠️ "+recErrMsg(r.error);return;}
+  const userRank=r.rank;
+  // 调 same_rank
+  let sr;
+  try{sr=await(await fetch(`${API}/api/same_rank?rank=${userRank}&prov=${encodeURIComponent(prov)}&subj=${encodeURIComponent(subj)}`)).json();}
+  catch(e){st.textContent="⚠️ 同分服务未启动";return;}
+  // 找/创建面板
+  let panel=document.getElementById("rp-samerank-panel");
+  if(!panel){
+    panel=document.createElement("div");
+    panel.id="rp-samerank-panel";
+    panel.className="samerank-panel";
+    document.getElementById("reclist").parentNode.insertBefore(panel,document.getElementById("reclist").nextSibling);
+  }
+  const items=sr.items||[];
+  if(!items.length){panel.innerHTML='<p class="dim">该位次附近暂无匹配学校,可适当放宽分数范围再试</p>';st.textContent=`位次约 ${userRank.toLocaleString()} · 同分 0 所`;return;}
+  panel.innerHTML=`<div style="font-weight:600;margin-bottom:6px;color:#8c2f1b">📊 同分去向 · ${prov}·${subj} · 位次约 ${userRank.toLocaleString()} · ${items.length} 所</div>`+
+    items.slice(0,30).map(s=>{
+      const tierLbl=s.tier==="985"?"985":s.tier==="211"?"211":s.tier==="dfc"?"双一流":"";
+      const diffStr=s.diff>0?`+${s.diff}`:`${s.diff}`;
+      const diffColor=s.diff>0?"#d85a30":"#1d9e75";
+      return `<div class="samerank-row" data-uni="${s.uni}" data-ll='${JSON.stringify(s.ll||[])}' style="cursor:pointer" onclick="showUniCard(this.dataset.uni)">
+        <span class="nm">${s.uni}</span>${tierLbl?`<span class="tier">${tierLbl}</span>`:""}
+        <span class="ss">${s.schoolScore}分</span>
+        <span class="diff" style="color:${diffColor}">${diffStr}位</span>
+        <button style="margin-left:auto;background:none;border:0;color:#8c2f1b;cursor:pointer;font-size:14px" title="加入志愿表" onclick="event.stopPropagation();(function(){})()">★</button>
+      </div>`;
+    }).join("")+`<div class="dim" style="margin-top:4px">+${Math.max(0,items.length-30)} 所略 · 点行查看详情</div>`;
+  st.textContent=`位次约 ${userRank.toLocaleString()} · 同分 ${items.length} 所`;
+  // 滚到面板
+  panel.scrollIntoView({behavior:"smooth", block:"nearest"});
+});
+// 一分一段: 直接打开 viz
+document.getElementById("rp-ranktbl")?.addEventListener("click",()=>{
+  const btn=document.getElementById("act-viz");
+  if(btn)btn.click();
+});
+
+// 一键填志愿: 将当前 RECS (24 个冲稳保) 全加入志愿表
+document.getElementById("rp-fillfav")?.addEventListener("click",()=>{
+  if(!RECS||!RECS.length){toast("先点「测一测」生成推荐");return;}
+  let added=0,skipped=0;
+  RECS.forEach(r=>{
+    const it={n:r.n,band:r.band,t:r.t||"",c:r.c||"",ll:r.ll||[],major:r.major||""};
+    const k=favKey(it);
+    if(favHas(k)){skipped++;return;}
+    FAV.push(it);added++;
+  });
+  if(added){
+    saveFAV();
+    syncBtns();
+    const st=document.getElementById("rp-status");
+    if(st)st.textContent=`已加入 ${added} 所到志愿表${skipped?`(${skipped} 所已在表中)`:""}`;
+    toast(`已加入 ${added} 所${skipped?` · 跳过 ${skipped} 所已存在`:""}`);
+    // 打开 fav 面板
+    const favBtn=document.getElementById("act-fav");
+    if(favBtn&&!document.getElementById("favpanel")?.classList.contains("show"))favBtn.click();
+  }else{
+    toast("全部已在志愿表中");
+  }
+});
 // 地区 + 专业筛选(我的推荐):省份多选 + 专业类搜索多选 → regions/mclasses 传引擎(空=不限)
 (function(){
   const PROVS="北京 天津 河北 山西 内蒙古 辽宁 吉林 黑龙江 上海 江苏 浙江 安徽 福建 江西 山东 河南 湖北 湖南 广东 广西 海南 重庆 四川 贵州 云南 西藏 陕西 甘肃 青海 宁夏 新疆".split(" ");

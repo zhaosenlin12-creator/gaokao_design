@@ -280,7 +280,7 @@ def _he_candidates(score, prov, subj, regions, mclasses, limit=60):
 
 
 def _llm_recommend(score, prov, subj, regions, mclasses, sums):
-    rank = estimate_rank(score, prov, subj) if score else 50000
+    rank = _score_to_rank(score, prov, subj) if score else 50000
     cands = _he_candidates(score, prov, subj, regions, mclasses, limit=30)
     if not cands:
         return None
@@ -338,15 +338,21 @@ def _llm_recommend(score, prov, subj, regions, mclasses, sums):
             c = _lookup(it)
             if not c:
                 continue
-            ll_str = ''
-            if len(c['ll']) >= 2:
-                ll_str = str(c['ll'][0]) + ',' + str(c['ll'][1])
+            ll_arr = list(c['ll'][:2]) if len(c['ll']) >= 2 else [0, 0]
+            # 真实 minRank: 用学校等效分转位次 (而不是 hack rank*x)
+            s_school = c.get('schoolScore') or 0
+            if s_school and prov and subj:
+                s_rank = _score_to_rank(s_school, prov, subj)
+            else:
+                s_rank = int(rank * (0.5 if band_key == bao else 0.8 if band_key == wen else 1.2))
             out.append({
                 'uni': c['n'],
-                'll': ll_str,
+                'll': ll_arr,
                 'major': c['major'],
                 'tier': c['tier'],
-                'minRank': int(rank * (0.5 if band_key == bao else 0.8 if band_key == wen else 1.2)),
+                'schoolScore': s_school,
+                'schoolScoreInProv': s_school,
+                'minRank': s_rank,
                 'grade': '',
                 'reason': (it.get('reason') or '')[:140],
             })
@@ -496,13 +502,17 @@ def _score_to_rank(score, prov, subj):
         return None
     r = _lookup(s)
     if r is not None:
+        # 检测是否落在 "无效" 区域 (低于本科线)
+        # 真实一分一段表只在本科线之上有意义, 表里 < 450 的数据是按线性外推的不准确值
+        if s < 200:
+            return 200000
         return r
     for delta in (1, 2, 3, 5, 8, 13, 21, 34):
         r = _lookup(s + delta)
         if r is not None: return r
         r = _lookup(s - delta)
         if r is not None: return r
-    return estimate_rank(score, prov, subj)
+    return 200000 if score < 200 else estimate_rank(score, prov, subj)
 
 def _rank_to_score(rank, prov, subj):
     if not rank or rank <= 0:
@@ -724,9 +734,10 @@ class H(BaseHTTPRequestHandler):
             subj = q.get('subj', ['物理'])[0]
             subj = q.get('subj', [ZH.get('default_subj', 'x')])[0]
             score = int(q.get('score', [0])[0] or 0)
-            base_rank = estimate_rank(score, prov, subj) if score else 50000
-            pts = [[s, estimate_rank(s, prov, subj)] for s in range(100, 751, 5)]
-            years_data = [{'year': 2025, 'pts': pts}]
+            # 一分一段: 真实 score->rank (新算法), 一年数据 (2025)
+            pts = [[s, _score_to_rank(s, prov, subj) if s>=100 else 0] for s in range(100, 751)]
+            years_data = [{'year': 2025, 'pts': pts, 'gaokao_total': sum(1 for s in range(100,751) if _score_to_rank(s, prov, subj) > 0)}]
+            # 注: 历年(2020-2024)需要各考试院公布的实际数据,当前先支持 2025;生产可对接 rank_table.json
             return self._send(200, json.dumps({'prov': prov, 'subj': subj, 'score': score, 'years': years_data}, ensure_ascii=False).encode('utf-8'))
         if p == '/api/recommend':
             prov = q.get('prov', [''])[0]
@@ -911,6 +922,74 @@ class H(BaseHTTPRequestHandler):
                 'schoolScoreInProv': s_prov_2024,
             }, ensure_ascii=False).encode('utf-8'))
 
+        if p == '/api/same_rank':
+            # 同分去向: 给定位次,返回去年该位次附近的学校列表
+            rank_q = int(q.get('rank', [0])[0] or 0)
+            prov = q.get('prov', [''])[0]
+            subj = q.get('subj', [''])[0]
+            if not rank_q or not prov or not subj:
+                return self._send(200, json.dumps({'error': 'missing params'}, ensure_ascii=False).encode('utf-8'))
+            # 收集该校在该省的等效分,算位次,差 < 50% 视为同分去向
+            out = []
+            for u in UNIS:
+                ss = _school_score_in_prov(u, prov, subj)
+                if not ss:
+                    continue
+                sr = _score_to_rank(ss, prov, subj)
+                if not sr:
+                    continue
+                diff_pct = abs(sr - rank_q) / max(rank_q, 1)
+                if diff_pct <= 0.20:  # 20% 误差内
+                    out.append({
+                        'uni': u.get('n', ''),
+                        'tier': u.get('t', ''),
+                        'p': u.get('p', ''),
+                        'c': u.get('c', ''),
+                        'll': list(u.get('ll', [])[:2]),
+                        'schoolScore': ss,
+                        'minRank': sr,
+                        'diff': sr - rank_q,
+                        'rank': u.get('rank', 0),
+                        'tp': u.get('tp', ''),
+                        'by': u.get('by', 0),
+                    })
+            out.sort(key=lambda x: abs(x['diff']))
+            return self._send(200, json.dumps({'rank': rank_q, 'prov': prov, 'subj': subj, 'count': len(out), 'items': out[:60]}, ensure_ascii=False).encode('utf-8'))
+        if p == '/api/uni/risk':
+            # 基于分数+学校+省份的风险评估(冲/稳/保/不可冲)
+            score = int(q.get('score', [0])[0] or 0)
+            prov = q.get('prov', [''])[0]
+            subj = q.get('subj', [''])[0]
+            name = q.get('name', [''])[0]
+            if not (score and prov and subj and name):
+                return self._send(200, json.dumps({'error': 'missing'}, ensure_ascii=False).encode('utf-8'))
+            u = next((x for x in UNIS if x.get('n') == name), None)
+            if not u:
+                return self._send(200, json.dumps({'error': 'no_school'}, ensure_ascii=False).encode('utf-8'))
+            ss = _school_score_in_prov(u, prov, subj)
+            usr_rank = _score_to_rank(score, prov, subj)
+            school_rank = _score_to_rank(ss, prov, subj) if ss else 0
+            diff = ss - score
+            # 风险等级
+            if diff > 50:
+                level = 'unreachable'; color = '#a8473b'
+                tip = '该校等效分超你 ' + str(diff) + ' 分,位次远在你前,正常情况上不了。可作 "梦想校"。'
+            elif diff > 10:
+                level = 'chong'; color = '#d85a30'
+                tip = '高 ' + str(diff) + ' 分,稳妥冲一冲。需填在前面,后面必须有兜底。'
+            elif diff >= -10:
+                level = 'wen'; color = '#e0a32e'
+                tip = '分数与该校接近,可作 "稳"。专业组可能踩线,关注是否服从调剂。'
+            else:
+                level = 'bao'; color = '#1d9e75'
+                tip = '低于该校 ' + str(-diff) + ' 分,基本能录,作 "保底" 较稳。'
+            return self._send(200, json.dumps({
+                'name': name, 'score': score, 'prov': prov, 'subj': subj,
+                'schoolScore': ss, 'diff': diff,
+                'userRank': usr_rank, 'schoolRank': school_rank,
+                'level': level, 'color': color, 'tip': tip,
+                'tier': u.get('t', ''), 'tierLabel': {'985':'985·双一流','211':'211·双一流','dfc':'双一流','ben':u.get('tp','本科')}.get(u.get('t',''), '本科'),
+            }, ensure_ascii=False).encode('utf-8'))
         if p == '/api/llm/health':
             try:
                 h = _llm.LLMClient.instance().health()
