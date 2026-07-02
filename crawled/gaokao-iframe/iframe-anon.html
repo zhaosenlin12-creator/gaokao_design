@@ -2652,8 +2652,9 @@ document.getElementById("rp-fillfav")?.addEventListener("click",()=>{
     FAV.push(it);added++;
   });
   if(added){
-    saveFAV();
-    syncBtns();
+    if(typeof favSave==="function")favSave();
+    if(typeof favRender==="function")favRender();
+    if(typeof syncCmpBtns==="function")syncCmpBtns();
     const st=document.getElementById("rp-status");
     if(st)st.textContent=`已加入 ${added} 所到志愿表${skipped?`(${skipped} 所已在表中)`:""}`;
     toast(`已加入 ${added} 所${skipped?` · 跳过 ${skipped} 所已存在`:""}`);
