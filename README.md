@@ -63,3 +63,4 @@ npm run dev
 - 静态数据:`crawled/gaokao-iframe/unis.json`(1596 所学校)
 - 地图瓦片:本地 `crawled/gaokao-iframe/tiles/`(可选,否则用 cartocdn 在线)
 - 风格:古风 MapLibre GL 主题
+
