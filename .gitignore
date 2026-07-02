@@ -1,0 +1,93 @@
+﻿# Node / Vite
+node_modules/
+dist/
+dist-ssr/
+.vite/
+build/
+out/
+.cache/
+*.tsbuildinfo
+
+# Logs
+*.log
+*.err.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Python (crawled backend)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Local debug/temp files (any _-prefixed dev artifact)
+_*.txt
+_*.json
+_*.png
+_*.jpg
+_*.jpeg
+_*.gif
+_*.svg
+_*.webp
+_*.out
+_*.err
+_*.log
+_*.py
+_*.pyc
+_*.html
+_*.htm
+_*.js
+_*.css
+_*.md
+_*.bak
+_*.db
+_*.sqlite
+_*.sqlite3
+
+# Local screenshots
+screenshot-*.png
+_diag_now/
+
+# crawled/ cleanup (local-only files)
+crawled/__pycache__/
+crawled/gaokao.db
+crawled/auth_cookies.json
+crawled/auth_state.json
+crawled/gaokao-iframe/iframe-anon.html.bak
+crawled/gaokao-iframe/_*.png
+crawled/gaokao-iframe/_*.jpg
+crawled/gaokao-iframe/tiles/terrarium/
+crawled/_*.png
+crawled/_*.jpg
+crawled/_*.py
+crawled/_*.html
+crawled/_*.out
+crawled/_*.err
+crawled/_*.txt
+crawled/_*.bak
+crawled/_*.json
+crawled/_*.log
+crawled/_backend.err
+crawled/_backend.out
+crawled/_serve.err
+crawled/_serve.out
+# User session / conversation history (not for git)
+"https agentsfeed.org"*.md
+"接着对话继续"*.md
+接着对话继续-*.md
