@@ -1767,7 +1767,9 @@ function focusSchool(ll){
                        :{top:60,bottom:Math.round(innerHeight*0.5),left:20,right:20};
   map.flyTo({center:ll,zoom:tz,padding:pad,duration:1600,curve:1.5,essential:true});
 }
+function _closeRecIfOpen(){try{const r=document.getElementById('recpanel');const b=document.getElementById('act-rec');if(r&&getComputedStyle(r).display!=='none'){r.style.display='none';if(b)b.classList.remove('on');}}catch(e){}}
 function showCard(u){
+  _closeRecIfOpen();
   const tierTxt={"985":"985 · 双一流","211":"211 · 双一流",dfc:"双一流",ben:(u.tp||"本科")}[u.t];
   const disc=(u.disc||[]).map(([d,g])=>`<span class="tag">${d} ${g}</span>`).join("");
   card.innerHTML=`<span class="x" role="button" tabindex="0" aria-label="关闭" onclick="card.style.display='none';hideDetail();document.body.classList.remove('has-card');selectMarker(null)">✕</span>
@@ -2488,6 +2490,7 @@ function badge(name,size){
     onerror="if(this.dataset.f2){this.src=this.dataset.f2;this.dataset.f2='';}else{this.outerHTML=sealSVG(this.dataset.n,this.width)}">`;
 }
 async function showUniCard(name){
+  _closeRecIfOpen();
   try{
     const u=await (await fetch(`${API}/api/uni?name=${encodeURIComponent(name)}&prov=${encodeURIComponent(document.getElementById("rp-prov").value)}`)).json();
     if(u.error)return;
