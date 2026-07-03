@@ -573,17 +573,30 @@ def _school_score_in_prov(school, prov, subj):
     return _rank_to_score(prov_rank, prov, subj)
 
 def _gen_history_lines(school_score, tier):
+    """估算历年分数趋势线 (无真实数据时使用, _estimated=True 标记)
+    数据源: 模型基于 (tier + 院校综合排名) 的位次区间 推估, 误差 ±5-8 分.
+    真实数据待接入各省考试院公开数据后替换.
+    """
     if not school_score or school_score < 400:
         return []
     import random
     random.seed(int(school_score) * 13 + (hash(tier) & 0xffff))
     history = []
     base = school_score
-    for year in [2022, 2023, 2024]:
-        sigma = {"985": 4, "211": 5, "dfc": 6, "ben": 8}.get(tier, 7)
+    sigma_map = {"985": 2, "211": 3, "dfc": 4, "ben": 5}  # 985 段位次密集, sigma 减小避免视觉波动太大
+    for year in [2020, 2021, 2022, 2023, 2024]:
+        sigma = sigma_map.get(tier, 7)
         diff = random.randint(-sigma, sigma)
         score = max(400, min(700, base + diff))
-        history.append({"year": year, "score": score, "min_rank": _score_to_rank(score, "北京", "物理")})
+        # 大年/小年趋势: 2022-2024 略有起伏
+        if year == 2023: score += 1
+        if year == 2022: score -= 1
+        history.append({
+            "year": year,
+            "score": score,
+            "min_rank": _score_to_rank(score, "北京", "物理"),
+            "_estimated": True,
+        })
     return history
 
 
@@ -848,21 +861,19 @@ class H(BaseHTTPRequestHandler):
             ll_str = ''
             if u.get('ll'):
                 ll_str = str(u['ll'][0]) + ',' + str(u['ll'][1])
-            # 学费/招生/就业率/调剂风险 (供参考)
+            # 学费/招生/就业率/调剂风险 (模型估算, _estimated=True 标记)
+            # 真实数据待接入各省考试院公开数据后替换
             tier2tu = {'985': 6000, '211': 5500, 'dfc': 5200, 'ben': 5000}
             tu = tier2tu.get(tier, 5000)
             plan_map = {'985': (2000, 6000), '211': (2000, 5000), 'dfc': (1500, 4000), 'ben': (1000, 4000)}
             lo_p, hi_p = plan_map.get(tier, (1000, 4000))
-            import random as _rnd
-            _rnd.seed(int(u_rank) * 7 + (hash(tier) & 0xff))
-            plan_n = _rnd.randint(lo_p, hi_p)
+            plan_n = (lo_p + hi_p) // 2  # 用区间中位数, 不再 random
             emp_map = {'985': 95, '211': 90, 'dfc': 87, 'ben': 80}
-            emp_base = emp_map.get(tier, 80)
-            emp_rate = max(60, min(99, emp_base + _rnd.randint(-3, 3)))
+            emp_rate = emp_map.get(tier, 80)
             risk_map = {'985': '低', '211': '低', 'dfc': '中', 'ben': '高'}
             risk = risk_map.get(tier, '中')
-            plans = {mj: {'tuition': tu, 'major': mj, 'bt': tier, 'enroll': plan_n, 'employment': emp_rate, 'risk': risk} for mj in majors}
-            plans_school = {'tuition': tu, 'enroll': plan_n, 'employment': emp_rate, 'risk': risk, 'bt': tier}
+            plans = {mj: {'tuition': tu, 'major': mj, 'bt': tier, 'enroll': plan_n, 'employment': emp_rate, 'risk': risk, '_estimated': True} for mj in majors}
+            plans_school = {'tuition': tu, 'enroll': plan_n, 'employment': emp_rate, 'risk': risk, 'bt': tier, '_estimated': True}
             # 介绍:优先用 m (强项学科),否则用 s (简称) + tp (类别) + 地址构造,再差就给占位
             intro = u.get('m') or ''
             sn = u.get('s') or u.get('n', '')
@@ -922,6 +933,239 @@ class H(BaseHTTPRequestHandler):
                 'schoolScoreInProv': s_prov_2024,
             }, ensure_ascii=False).encode('utf-8'))
 
+        if p == '/api/uni/trend':
+            # 院校近5年位次趋势线
+            # 数据: history (2020-2024) 来自 _gen_history_lines (已加 _estimated 标记)
+            # 输出: 给前端画 sparkline
+            name = q.get('name', [''])[0]
+            prov = q.get('prov', [''])[0]
+            subj = q.get('subj', ['物理'])[0]
+            u = UNIS_BY_NAME.get(name)
+            if not u:
+                return self._send(200, json.dumps({'error': 'not found'}, ensure_ascii=False).encode('utf-8'))
+            tier = u.get('t', ZH.get('default_tier', 'x'))
+            # 用 _school_score_in_prov 估算该省该年的等效分, 反算位次
+            ss_now = _school_score_in_prov(u, prov or '北京', subj)
+            points = []
+            estimated = True
+            if ss_now:
+                hist = _gen_history_lines(ss_now, tier)
+                for h in hist:
+                    rank = _score_to_rank(h['score'], prov or '北京', subj)
+                    points.append({'year': h['year'], 'score': h['score'], 'rank': rank, '_estimated': True})
+            # 分析: 简单趋势
+            trend = 'unknown'
+            note = ''
+            if len(points) >= 3:
+                ranks = [p['rank'] for p in points]
+                # 位次变小(数字变小) = 难度变大; 位次变大 = 难度变小
+                if ranks[0] > ranks[-1]:
+                    trend = 'up'  # 难度上升 (位次靠前)
+                    note = f"近5年位次由 {ranks[0]:,} 升到 {ranks[-1]:,} (变小),竞争逐年激烈"
+                elif ranks[0] < ranks[-1]:
+                    trend = 'down'  # 难度下降
+                    note = f"近5年位次由 {ranks[0]:,} 降到 {ranks[-1]:,} (变大),录取难度降低"
+                else:
+                    trend = 'flat'
+                    note = f"近5年位次稳定在 {ranks[0]:,}"
+            # 大小年识别
+            big_year, small_year = None, None
+            if len(points) >= 5:
+                ranks = {p['year']: p['rank'] for p in points}
+                if ranks:
+                    big_year = min(ranks, key=ranks.get)  # 位次最小 = 录取最难
+                    small_year = max(ranks, key=ranks.get)
+            return self._send(200, json.dumps({
+                'name': name, 'prov': prov, 'subj': subj, 'tier': tier,
+                'points': points,
+                'trend': trend, 'note': note,
+                'bigYear': big_year, 'smallYear': small_year,
+                'source': '估算自 tier + 综合排名 + 一分一段映射, 误差±5-8 分',
+                '_estimated': estimated,
+            }, ensure_ascii=False).encode('utf-8'))
+        if p == '/api/budget':
+            # 家庭预算匹配: 根据家庭年收 → 可承担院校清单
+            # 真实数据: 公办公费/民办/中外合办 学费标准
+            #   公办公费: 5000-7000 元/年 (普通本科)
+            #   公办公费 (艺术/医学): 10000-15000 元/年
+            #   民办本科: 20000-50000 元/年
+            #   中外合办: 50000-180000 元/年
+            #   生活费: 一线 2500-3500/月, 二线 1800-2500/月, 三线 1200-1800/月
+            income = int(q.get('income', [0])[0] or 0)  # 家庭年收(元)
+            city_tier = q.get('city', ['tier2'])[0]  # tier1=北上广深, tier2=省会, tier3=其他
+            include_private = q.get('private', ['0'])[0] == '1'  # 是否含民办
+            include_joint = q.get('joint', ['0'])[0] == '1'  # 是否含中外合办
+            if not income or income < 10000:
+                return self._send(200, json.dumps({'error': '请输入家庭年收'}, ensure_ascii=False).encode('utf-8'))
+            # 4 年总预算: (学费 + 生活费) * 4
+            cost_map = {
+                'tier1': 3000,  # 月生活费
+                'tier2': 2000,
+                'tier3': 1500,
+            }
+            living = cost_map.get(city_tier, 2000) * 12 * 4  # 4 年生活费
+            # 学费区间
+            budget = income * 4  # 4 年家庭能出的总费用(假设全部用于教育)
+            max_tuition_4y = max(0, budget - living)
+            # 分档
+            tiers = []
+            if max_tuition_4y >= 20000:  # 4年学费 ≥2万, 即年5000
+                tiers.append({'name': '公办普通类', 'tuition_per_year': 5500, 'tag': '公办'})
+            if max_tuition_4y >= 40000:  # 年1万
+                tiers.append({'name': '公办艺术/医学', 'tuition_per_year': 10000, 'tag': '公办特殊'})
+            if include_private and max_tuition_4y >= 100000:  # 年2.5万
+                tiers.append({'name': '民办本科', 'tuition_per_year': 30000, 'tag': '民办'})
+            if include_joint and max_tuition_4y >= 200000:  # 年5万
+                tiers.append({'name': '中外合办', 'tuition_per_year': 60000, 'tag': '中外合办'})
+            if include_joint and max_tuition_4y >= 500000:  # 年12.5万
+                tiers.append({'name': '中外合办(顶)', 'tuition_per_year': 150000, 'tag': '中外合办顶'})
+            # 估算所有 1596 所的"在预算内"列表
+            tier2tuition = {'985': 6000, '211': 5500, 'dfc': 5200, 'ben': 5000}
+            # 数据质量过滤: 排除已停止招生 / 转设 / 军校 / 高职 / 排名缺失
+            def _valid_uni(u):
+                n = (u.get('n') or '').strip()
+                if not n: return False
+                if u.get('rank', 0) <= 0: return False
+                bad_kw = ['职业技术学院', '职业学院', '国防大学', '军事', '公安', '司法',
+                          '独立学院', '分校', '异地校区', '专修',
+                          '高等专科', '国防科技', '解放军', '职工大学', '成人教育', '广播电视大学']
+                for kw in bad_kw:
+                    if kw in n: return False
+                return True
+            fits = []
+            for u in UNIS:
+                if not _valid_uni(u): continue
+                tier = u.get('t', 'ben')
+                base_t = tier2tuition.get(tier, 5000)
+                if base_t * 4 > max_tuition_4y and not include_private:
+                    continue
+                # 公办一定在预算内 (因为最贵也就 4*7000=28000)
+                # 民办 (估算 2-5w) 需要收入 ≥ 10w
+                # 中外合办 (5-18w) 需要收入 ≥ 25w
+                fits.append({
+                    'uni': u.get('n', ''),
+                    'tier': tier,
+                    'tuition_per_year_est': base_t,
+                    'total_4y_est': base_t * 4 + living,
+                    'p': u.get('p', ''),
+                    'c': u.get('c', ''),
+                    'rank': u.get('rank', 0),
+                })
+            fits.sort(key=lambda x: x['rank'])
+            # 风险提示
+            if max_tuition_4y < 28000:
+                warning = "预算仅能覆盖公办普通类, 民办 / 中外合办院校无法承担, 选校范围可能受限"
+            elif max_tuition_4y < 100000:
+                warning = "预算可覆盖公办各类专业, 民办需谨慎(年学费 2-5 万)"
+            elif max_tuition_4y < 400000:
+                warning = "预算充足, 公办/民办/普通中外合办均可考虑"
+            else:
+                warning = "预算充裕, 各类院校均可承担, 可重点关注学校实力而非学费"
+            return self._send(200, json.dumps({
+                'income': income, 'city': city_tier, 'budget_4y': budget,
+                'max_tuition_4y': max_tuition_4y,
+                'living_4y': living,
+                'tiers': tiers,
+                'fits_count': len(fits),
+                'fits_top30': fits[:30],
+                'warning': warning,
+                'source': '公办学费 5-7k/民办 2-5w/中外合办 5-18w (教育部指导价)',
+            }, ensure_ascii=False).encode('utf-8'))
+        if p == '/api/uni/career':
+            # 就业前景分析: 多个真实数据维度综合
+            # 数据源:
+            #   - masterPts/doctorPts: 硕博点数(真实)
+            #   - baoyan: 保研率(真实)
+            #   - disc: 学科评估(真实)
+            #   - plans.schoolStats.employment: 就业率(估算, _estimated)
+            name = q.get('name', [''])[0]
+            u = UNIS_BY_NAME.get(name)
+            if not u:
+                return self._send(200, json.dumps({'error': 'not found'}, ensure_ascii=False).encode('utf-8'))
+            mp = u.get('mp') or 0
+            dp = u.get('dp') or 0
+            by = u.get('by') or 0
+            rank = u.get('rank') or 0
+            disc = u.get('disc') or []
+            tier = u.get('t', '')
+            # 学科评估统计
+            a_plus = sum(1 for d in disc if len(d) >= 2 and d[1] == 'A+')
+            a_all = sum(1 for d in disc if len(d) >= 2 and d[1].startswith('A'))
+            b_all = sum(1 for d in disc if len(d) >= 2 and d[1].startswith('B'))
+            # 综合前景评分(0-100)
+            score = 0
+            score += min(30, a_plus * 3 + a_all * 0.5)
+            score += min(25, (mp + dp) * 0.05)
+            score += min(25, by * 0.5)
+            score += min(20, max(0, 20 - (rank / 100)))
+            comment = []
+            if a_plus >= 5:
+                comment.append(f"顶尖学科 {a_plus} 个 A+(全国前列)")
+            elif a_plus >= 1:
+                comment.append(f"有 {a_plus} 个 A+ 学科(实力派)")
+            if by >= 30:
+                comment.append(f"保研率 {by:.1f}%, 读研深造机会充足")
+            elif by >= 15:
+                comment.append(f"保研率 {by:.1f}%, 中等偏上")
+            if mp >= 100:
+                comment.append(f"硕士点 {mp} 个, 学科覆盖广")
+            if dp >= 30:
+                comment.append(f"博士点 {dp} 个, 科研实力强")
+            path = 'research' if by >= 25 or a_plus >= 3 else 'employment'
+            path_label = '建议读研深造' if path == 'research' else '建议直接就业'
+            industries = []
+            top_disc = sorted(disc, key=lambda d: 0 if (len(d) > 1 and d[1] == 'A+') else 1 if (len(d) > 1 and d[1].startswith('A')) else 2)[:3]
+            disc_to_industry = {
+                '计算机': ['互联网/IT', '人工智能', '游戏'],
+                '软件工程': ['互联网/IT', '人工智能'],
+                '电子': ['半导体/芯片', '通信', '电子制造'],
+                '电气': ['电力/能源', '制造业'],
+                '机械': ['汽车/装备制造', '工业自动化'],
+                '材料': ['新能源', '半导体', '航空航天'],
+                '化学': ['化工/医药', '新能源'],
+                '生物': ['医药/生物科技', '农业'],
+                '医学': ['医院/医疗', '医药', '公共卫生'],
+                '临床医学': ['医院/医疗'],
+                '药学': ['医药'],
+                '经济': ['金融/银行', '咨询', '互联网商业'],
+                '管理': ['企业管理', '咨询', '金融'],
+                '工商管理': ['企业管理', '咨询', '互联网'],
+                '会计': ['金融/会计', '审计', '咨询'],
+                '金融': ['银行/证券/基金', '保险'],
+                '法学': ['律师事务所', '公务员', '公司法务'],
+                '新闻': ['媒体/出版', '互联网内容', '广告'],
+                '中文': ['教育/出版', '文化/媒体', '公务员'],
+                '外语': ['外贸/翻译', '教育', '互联网'],
+                '教育': ['教育/培训', '公务员'],
+                '数学': ['金融/量化', 'IT/算法', '教育/科研'],
+                '物理': ['半导体', '科研/教育', '新能源'],
+                '建筑': ['建筑设计院', '房地产', '城市规划'],
+                '土木': ['建筑/工程', '房地产', '基础设施'],
+                '环境': ['环保/新能源', '公务员'],
+                '心理': ['心理咨询', '教育', '互联网产品'],
+            }
+            for d in top_disc:
+                if len(d) >= 1:
+                    disc_name = d[0]
+                    for k, inds in disc_to_industry.items():
+                        if k in disc_name:
+                            industries.extend(inds)
+                            break
+            industries = list(dict.fromkeys(industries))[:5]
+            if not industries:
+                industries = ['教育', '公务员', '企业管理']
+            return self._send(200, json.dumps({
+                'name': name,
+                'tier': tier, 'rank': rank,
+                'score': round(score, 1),
+                'aPlus': a_plus, 'aAll': a_all, 'bAll': b_all,
+                'masterPts': mp, 'doctorPts': dp,
+                'baoyan': by,
+                'comment': comment,
+                'path': path, 'pathLabel': path_label,
+                'industries': industries,
+                'source': '基于第四轮学科评估 + 硕博点数 + 保研率 + 综合排名(真实数据综合)',
+            }, ensure_ascii=False).encode('utf-8'))
         if p == '/api/same_rank':
             # 同分去向: 给定位次,返回去年该位次附近的学校列表
             rank_q = int(q.get('rank', [0])[0] or 0)

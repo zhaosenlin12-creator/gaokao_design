@@ -875,6 +875,7 @@
     <button class="actbtn" id="act-rec">✦ 我的推荐大学</button>
     <button class="actbtn" id="act-quiz">✦ 什么专业适合我</button>
     <button class="actbtn" id="act-viz">✦ 历年分数线</button>
+    <button class="actbtn" id="act-budget">✦ 家庭预算</button>
   </div>
 </div>
 <div class="vizpanel" id="vizpanel">
@@ -931,7 +932,7 @@ addEventListener("DOMContentLoaded",()=>{
   const tbt=document.getElementById("tb-toggle");
   tbt?.addEventListener("click",()=>{const o=document.getElementById("toolbar").classList.toggle("more-open");tbt.classList.toggle("on",o);tbt.setAttribute("aria-expanded",o);hap();});
   // 即时浮标:悬停/聚焦马上显名(toolbar 有 overflow:hidden,浮标挂 body 免裁切)。'r'=右侧(左上各键),'u'=上方(底部按钮)
-  const FLY={stylebtn:['画风 · 山水 / 水彩','r'],rotbtn:['视角 · 平移 / 旋转','r'],wxbtn:['天气 · 分区气候','r'],t3dbtn:['地形 · 平面 / 立体','r'],musbtn:['配乐 · 轻钢琴','r'],globebtn:['投影 · 地球 / 平面','r'],'tb-toggle':['更多设置','r'],cfgbtn:['设置 · 画风/视角/天气/地形','r'],'act-rec':['填分数 / 位次 → 冲稳保院校','u'],'act-quiz':['测兴趣性格 → 适配专业方向','u'],'act-viz':['一分一段 · 历年位次曲线','u'],'seg-all':['显示全部院校','u'],'seg-985':['只看 985 工程院校','u'],'seg-211':['只看 211 / 双一流院校','u'],'seg-cs':['计算机优势院校(软硬件 · 电子信息)','u'],'seg-med':['医学优势院校','u'],'seg-fin':['财经 / 政法优势院校','u']};
+  const FLY={stylebtn:['画风 · 山水 / 水彩','r'],rotbtn:['视角 · 平移 / 旋转','r'],wxbtn:['天气 · 分区气候','r'],t3dbtn:['地形 · 平面 / 立体','r'],musbtn:['配乐 · 轻钢琴','r'],globebtn:['投影 · 地球 / 平面','r'],'tb-toggle':['更多设置','r'],cfgbtn:['设置 · 画风/视角/天气/地形','r'],'act-rec':['填分数 / 位次 → 冲稳保院校','u'],'act-quiz':['测兴趣性格 → 适配专业方向','u'],'act-viz':['一分一段 · 历年位次曲线','u'],'act-budget':['家庭年收 → 能上哪些学校(公办学费 5-7k/民办 2-5w/中外合办 5-18w)','u'],'seg-all':['显示全部院校','u'],'seg-985':['只看 985 工程院校','u'],'seg-211':['只看 211 / 双一流院校','u'],'seg-cs':['计算机优势院校(软硬件 · 电子信息)','u'],'seg-med':['医学优势院校','u'],'seg-fin':['财经 / 政法优势院校','u']};
   const fly=document.createElement('div');fly.className='tb-flyout';document.body.appendChild(fly);
   const flyShow=b=>{const c=FLY[b.id];if(!c)return;const r=b.getBoundingClientRect();fly.textContent=c[0];fly.dataset.dir=c[1];
     if(c[1]==='u'){fly.style.left=(r.left+r.width/2)+'px';fly.style.top=(r.top-8)+'px';}
@@ -1781,8 +1782,10 @@ function showCard(u){
     ${u.m?`<p class="dim" style="margin:4px 0;line-height:1.5">${u.m}</p>`:""}
     <p class="dim" id="card-intro" style="margin-top:6px;display:none"></p>
     <div id="card-school-stats" style="display:none;margin-top:6px;padding:6px 8px;background:rgba(245,238,220,.5);border-radius:4px"></div>
+    <div id="card-trend5" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(245,238,220,.4);border-radius:4px"></div>
     <div id="card-history" style="display:none;margin-top:6px"></div>
     <div id="card-trend"></div>
+    <div id="card-career" style="display:none;margin-top:6px;padding:8px 10px;background:rgba(157,47,27,.04);border-radius:4px"></div>
     <div class="card-btns">${cardFavHTML({n:u.n,t:u.t,c:u.c||u.p,ll:u.ll})}${cardCmpHTML({n:u.n,t:u.t,c:u.c||u.p,ll:u.ll})}</div>
     <p class="dim">※ 教育部名单 · 第四轮学科评估 · 数据来自各省考试院等公开信息整理,仅供参考${u.approx?" · 坐标为城市近似":""}</p>`;
   card.style.display="block";document.body.classList.add("has-card");
@@ -1819,6 +1822,57 @@ function showCard(u){
         statsEl.style.display = "block";
       }
     }
+    // 近5年位次趋势 (sparkline + 大小年)
+    try{
+      const prov=document.getElementById("rp-prov")?document.getElementById("rp-prov").value:"";
+      const subj=document.getElementById("rp-subj")?document.getElementById("rp-subj").value:"";
+      const tr=await(await fetch(`${API}/api/uni/trend?name=${encodeURIComponent(u.n)}&prov=${encodeURIComponent(prov)}&subj=${encodeURIComponent(subj)}`)).json();
+      const trEl=document.getElementById("card-trend5");
+      if(trEl && tr.points && tr.points.length){
+        // sparkline
+        const pts=tr.points;
+        const rmin=Math.min(...pts.map(p=>p.rank));
+        const rmax=Math.max(...pts.map(p=>p.rank));
+        const w=240,h=44;
+        const path=pts.map((p,i)=>{
+          const x=i*(w/(pts.length-1||1));
+          const y=h-((p.rank-rmin)/((rmax-rmin)||1))*h;
+          return (i===0?"M":"L")+x.toFixed(1)+","+y.toFixed(1);
+        }).join(" ");
+        const bigY=pts.find(p=>p.year===tr.bigYear);
+        const smallY=pts.find(p=>p.year===tr.smallYear);
+        const trendColor=tr.trend==="up"?"#d85a30":tr.trend==="down"?"#1d9e75":"#7d6536";
+        const arrow=tr.trend==="up"?"▲":tr.trend==="down"?"▼":"─";
+        trEl.innerHTML=`
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span style="font-size:12px;font-weight:600;color:#4a3414">📊 近5年位次趋势</span>
+            <span style="font-size:11px;color:${trendColor};font-weight:600">${arrow} ${tr.trend==="up"?"竞争激烈":tr.trend==="down"?"难度降低":"稳定"}</span>
+          </div>
+          <svg viewBox="0 0 ${w} ${h}" style="width:100%;max-width:240px;display:block;margin:2px 0">
+            <path d="${path}" fill="none" stroke="${trendColor}" stroke-width="1.6"/>
+            ${pts.map((p,i)=>{
+              const x=i*(w/(pts.length-1||1));
+              const y=h-((p.rank-rmin)/((rmax-rmin)||1))*h;
+              const isBig=p.year===tr.bigYear;
+              const isSmall=p.year===tr.smallYear;
+              const c=isBig?"#d85a30":isSmall?"#1d9e75":"#7d6536";
+              const r=isBig||isSmall?3:2;
+              return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${c}"/>`;
+            }).join("")}
+            ${pts.map((p,i)=>{
+              const x=i*(w/(pts.length-1||1));
+              return `<text x="${x.toFixed(1)}" y="${(h+10).toFixed(1)}" font-size="9" fill="#8a7656" text-anchor="middle">${p.year}</text>`;
+            }).join("")}
+          </svg>
+          <div style="font-size:11px;color:#5d4520;line-height:1.4">${tr.note||""}</div>
+          ${tr.bigYear?`<div style="font-size:11px;color:#d85a30">大年:${tr.bigYear} · ${(bigY?bigY.rank.toLocaleString():"")}位</div>`:""}
+          ${tr.smallYear?`<div style="font-size:11px;color:#1d9e75">小年:${tr.smallYear} · ${(smallY?smallY.rank.toLocaleString():"")}位</div>`:""}
+          <div class="dim" style="font-size:10px;margin-top:3px">${tr.source||""}</div>
+        `;
+        trEl.style.display="block";
+      }
+    }catch(e){console.warn("trend fetch",e);}
+
     // 历年分数 (上一个同学上不上)
     if(d.history && d.history.length){
       const histEl = document.getElementById("card-history");
@@ -1851,6 +1905,29 @@ function showCard(u){
         intro.style.display = "block";
       }
     }
+    // 拉取 career 就业前景 + 升学路径
+    try{
+      const cv = await (await fetch(`${API}/api/uni/career?name=${encodeURIComponent(u.n)}`)).json();
+      if(!cv.error){
+        const ce = document.getElementById("card-career");
+        if(ce){
+          const pathColor = cv.path === "research" ? "#1d9e75" : "#8c2f1b";
+          const indus = (cv.industries||[]).map(i=>`<span class="tag" style="font-size:10px;padding:1px 5px">${i}</span>`).join("");
+          ce.innerHTML = `
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+              <span style="font-size:13px;font-weight:600;color:#4a3414">💼 就业前景</span>
+              <span style="font-size:12px;color:#7d6536">综合分 <b style="color:#8c2f1b;font-size:14px">${cv.score}</b>/100</span>
+              <span style="font-size:11px;padding:1px 7px;border-radius:3px;background:${pathColor};color:#fff">${cv.pathLabel}</span>
+            </div>
+            <div style="font-size:11.5px;color:#5d4520;line-height:1.55;margin-bottom:4px">${(cv.comment||[]).map(c=>"· "+c).join("<br>")||"暂未提供详细分析"}</div>
+            <div style="font-size:11px;color:#7d6536;margin-bottom:2px">🎯 主要就业方向</div>
+            <div class="tags" style="gap:3px">${indus}</div>
+            <div class="dim" style="font-size:10px;margin-top:4px">${cv.source||""}</div>
+          `;
+          ce.style.display = "block";
+        }
+      }
+    }catch(e){console.warn("career fetch",e);}
   }catch(e){console.warn("showCard async",e);}})();
 
 }
@@ -2067,6 +2144,79 @@ function openViz(){
 document.querySelectorAll(".viztab").forEach(b=>b.addEventListener("click",()=>{
   vizTab=b.dataset.t;document.querySelectorAll(".viztab").forEach(x=>x.classList.toggle("on",x===b));renderViz();}));
 document.getElementById("act-viz").addEventListener("click",openViz);
+
+// ---------- 家庭预算匹配 ----------
+const budgetmask=document.createElement("div");budgetmask.className="vizmask";document.body.appendChild(budgetmask);
+const budgetpanel=document.createElement("div");budgetpanel.className="vizpanel";budgetpanel.id="budgetpanel";
+budgetpanel.innerHTML=`<span class="x" role="button" tabindex="0" aria-label="关闭预算面板" onclick="closeBudget()">✕</span><h3>家庭预算匹配</h3><div id="budget-body"></div>`;
+document.body.appendChild(budgetpanel);
+
+function closeBudget(){budgetmask.classList.remove("show");budgetpanel.classList.remove("show");document.getElementById("act-budget").classList.remove("on");}
+function openBudget(){
+  if(budgetpanel.classList.contains("show"))return closeBudget();
+  renderBudget();
+  budgetmask.classList.add("show");budgetpanel.classList.add("show");document.getElementById("act-budget").classList.add("on");
+}
+function renderBudget(){
+  const saved=(function(){try{return JSON.parse(localStorage.getItem("gk_budget")||"{}")}catch(e){return{}}})();
+  document.getElementById("budget-body").innerHTML=`
+    <div class="vizctl" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <label>家庭年收(元)<input type="number" id="bd-income" value="${saved.income||120000}" min="10000" step="10000" style="width:120px"></label>
+      <label>城市<input type="text" id="bd-city" list="bd-city-list" value="${saved.city||"tier2"}" style="width:100px">
+        <datalist id="bd-city-list"><option value="tier1">一线(北上广深)</option><option value="tier2">省会/二线</option><option value="tier3">其他</option></datalist>
+      </label>
+      <label><input type="checkbox" id="bd-private" ${saved.private?"checked":""}> 含民办</label>
+      <label><input type="checkbox" id="bd-joint" ${saved.joint?"checked":""}> 含中外合办</label>
+      <button class="rptool" id="bd-go" style="margin-left:auto">💰 算算能上什么</button>
+    </div>
+    <div id="bd-result" style="margin-top:10px"></div>
+    <p class="dim" style="margin:6px 2px 0">公办学费 5-7千/年(普通)/1-1.5万(艺术医学); 民办 2-5万; 中外合办 5-18万(教育部指导价);生活费一线 3千/月,二线 2千,三线 1.5千 · 4 年总预算估算.</p>
+  `;
+  document.getElementById("bd-go").onclick=runBudget;
+  // 自动跑一次
+  runBudget();
+}
+async function runBudget(){
+  const income=+(document.getElementById("bd-income").value||0);
+  const city=document.getElementById("bd-city").value||"tier2";
+  const priv=document.getElementById("bd-private").checked?"1":"0";
+  const jt=document.getElementById("bd-joint").checked?"1":"0";
+  localStorage.setItem("gk_budget",JSON.stringify({income,city,private:!!+priv,joint:!!+jt}));
+  const el=document.getElementById("bd-result");
+  el.innerHTML='<p class="dim" style="padding:24px 0;text-align:center">计算中…</p>';
+  try{
+    const d=await(await fetch(`${API}/api/budget?income=${income}&city=${city}&private=${priv}&joint=${jt}`)).json();
+    if(d.error){el.innerHTML=`<p class="dim">⚠️ ${d.error}</p>`;return;}
+    const tierHtml=d.tiers.map(t=>`<span class="tag" style="margin-right:4px;background:#f6e3d0;color:#7a3a1a">${t.name} <b>${t.tuition_per_year}</b>元/年</span>`).join("");
+    const fitsHtml=(d.fits_top30||[]).slice(0,12).map(s=>{
+      const tl=s.tier==="985"?"985":s.tier==="211"?"211":s.tier==="dfc"?"双一流":"";
+      return `<tr><td style="padding:4px 6px;font-size:12px">${s.uni}</td><td style="font-size:10px;color:#7d6536">${tl}</td><td style="font-size:11px;color:#5d4520;text-align:right">${s.tuition_per_year_est}元/年</td><td style="font-size:11px;color:#7d6536;text-align:right">#${s.rank||"-"}</td></tr>`;
+    }).join("");
+    el.innerHTML=`
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+        <div style="padding:10px;background:rgba(157,47,27,.06);border-radius:6px;text-align:center">
+          <div class="dim" style="font-size:11px">4 年总预算</div>
+          <div style="font-size:18px;font-weight:600;color:#8c2f1b">¥${d.budget_4y.toLocaleString()}</div>
+        </div>
+        <div style="padding:10px;background:rgba(157,47,27,.06);border-radius:6px;text-align:center">
+          <div class="dim" style="font-size:11px">可承担学费(4年)</div>
+          <div style="font-size:18px;font-weight:600;color:#1d9e75">¥${d.max_tuition_4y.toLocaleString()}</div>
+        </div>
+        <div style="padding:10px;background:rgba(157,47,27,.06);border-radius:6px;text-align:center">
+          <div class="dim" style="font-size:11px">生活费(4年)</div>
+          <div style="font-size:18px;font-weight:600;color:#7a6442">¥${d.living_4y.toLocaleString()}</div>
+        </div>
+      </div>
+      <div style="margin-bottom:8px;font-size:12px"><b>可承担院校类别:</b>${tierHtml||'<span class="dim">无 - 预算过低</span>'}</div>
+      <div style="margin-bottom:10px;padding:8px;background:rgba(216,90,48,.06);border-radius:6px;font-size:12px;color:#7a3a1a">💡 ${d.warning||""}</div>
+      <div style="font-size:12px;color:#4a3414;margin-bottom:4px">📚 在预算内院校 (共 ${d.fits_count} 所) · 按综合排名取前 12:</div>
+      <table style="width:100%;border-collapse:collapse"><tbody>${fitsHtml}</tbody></table>
+      <div class="dim" style="font-size:10px;margin-top:8px">数据源: ${d.source||""}</div>
+    `;
+  }catch(e){el.innerHTML=`<p class="dim" style="padding:24px 0;text-align:center">⚠️ 预算服务未启动</p>`;}
+}
+document.getElementById("act-budget").addEventListener("click",openBudget);
+budgetmask.addEventListener("click",closeBudget);
 vizmask.addEventListener("click",closeViz);
 // ---------- 跨校对比 ----------
 const cmpmask=document.createElement("div");cmpmask.className="vizmask";document.body.appendChild(cmpmask);
