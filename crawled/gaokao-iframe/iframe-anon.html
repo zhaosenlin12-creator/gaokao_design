@@ -2163,7 +2163,7 @@ function renderBudget(){
   const saved=(function(){try{return JSON.parse(localStorage.getItem("gk_budget")||"{}")}catch(e){return{}}})();
   document.getElementById("budget-body").innerHTML=`
     <div class="vizctl" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-      <label>家庭年收(元)<input type="number" id="bd-income" value="${saved.income||120000}" min="10000" step="10000" style="width:120px"></label>
+      <label>家庭年收入(元)<input type="number" id="bd-income" value="${saved.income||120000}" min="30000" step="10000" placeholder="如 120000" style="width:130px" title="家庭年税后收入(元)·本工具按此估算 4 年总预算"></label>
       <label>城市<input type="text" id="bd-city" list="bd-city-list" value="${saved.city||"tier2"}" style="width:100px">
         <datalist id="bd-city-list"><option value="tier1">一线(北上广深)</option><option value="tier2">省会/二线</option><option value="tier3">其他</option></datalist>
       </label>
@@ -2172,7 +2172,8 @@ function renderBudget(){
       <button class="rptool" id="bd-go" style="margin-left:auto">💰 算算能上什么</button>
     </div>
     <div id="bd-result" style="margin-top:10px"></div>
-    <p class="dim" style="margin:6px 2px 0">公办学费 5-7千/年(普通)/1-1.5万(艺术医学); 民办 2-5万; 中外合办 5-18万(教育部指导价);生活费一线 3千/月,二线 2千,三线 1.5千 · 4 年总预算估算.</p>
+    <p class="dim" style="margin:6px 2px 0">家庭年收入 → 4 年总预算 = 收入×4, 减去 4 年生活费后, 即为可承担的学费总和; 院校按实际学费档(公办 5-7k / 中外合办 5-18w)过滤.</p>
+    <p class="dim" style="margin:2px 2px 0">公办学费 5-7千/年(普通)/1-1.5万(艺术医学); 民办 2-5万; 中外合办 5-18万(教育部指导价);生活费一线 3千/月,二线 2千,三线 1.5千 · 4 年总预算估算.</p>
   `;
   document.getElementById("bd-go").onclick=runBudget;
   // 自动跑一次
@@ -2190,10 +2191,21 @@ async function runBudget(){
     const d=await(await fetch(`${API}/api/budget?income=${income}&city=${city}&private=${priv}&joint=${jt}`)).json();
     if(d.error){el.innerHTML=`<p class="dim">⚠️ ${d.error}</p>`;return;}
     const tierHtml=d.tiers.map(t=>`<span class="tag" style="margin-right:4px;background:#f6e3d0;color:#7a3a1a">${t.name} <b>${t.tuition_per_year}</b>元/年</span>`).join("");
-    const fitsHtml=(d.fits_top30||[]).slice(0,12).map(s=>{
+    // 表格: 12 校综合排名靠前 + (如勾选含中外合办) 10 所中外合办 (jnt 校排名靠后单独列出, 不会被 top12 掩盖)
+    const top12 = (d.fits_top30||[]).slice(0,12);
+    const jntRows = (d.fits_joint_top||[]).map(s=>{
+      const tl=s.tier==="985"?"985":s.tier==="211"?"211":s.tier==="dfc"?"双一流":"";
+      return `<tr style="background:rgba(157,47,27,.05)"><td style="padding:4px 6px;font-size:12px">🌐 ${s.uni}</td><td style="font-size:10px;color:#7d6536">${tl}</td><td style="font-size:11px;color:#5d4520;text-align:right"><b>${s.tuition_per_year_est}元/年</b></td><td style="font-size:11px;color:#7d6536;text-align:right">#${s.rank||"-"}</td></tr>`;
+    }).join("");
+    const fitsHtml=top12.map(s=>{
       const tl=s.tier==="985"?"985":s.tier==="211"?"211":s.tier==="dfc"?"双一流":"";
       return `<tr><td style="padding:4px 6px;font-size:12px">${s.uni}</td><td style="font-size:10px;color:#7d6536">${tl}</td><td style="font-size:11px;color:#5d4520;text-align:right">${s.tuition_per_year_est}元/年</td><td style="font-size:11px;color:#7d6536;text-align:right">#${s.rank||"-"}</td></tr>`;
     }).join("");
+    const jntSection = (jt==="1" && d.joint_count>0) ? `
+      <div style="margin-top:14px;padding-top:10px;border-top:1px dashed #d5c096">
+        <div style="font-size:12px;color:#7a3a1a;margin-bottom:4px">🌐 <b>含中外合办</b> · 教育部名录内 ${d.joint_count} 所 (取前 10):</div>
+        <table style="width:100%;border-collapse:collapse"><tbody>${jntRows}</tbody></table>
+      </div>` : "";
     el.innerHTML=`
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
         <div style="padding:10px;background:rgba(157,47,27,.06);border-radius:6px;text-align:center">
@@ -2213,7 +2225,7 @@ async function runBudget(){
       <div style="margin-bottom:10px;padding:8px;background:rgba(216,90,48,.06);border-radius:6px;font-size:12px;color:#7a3a1a">💡 ${d.warning||""}</div>
       <div style="font-size:12px;color:#4a3414;margin-bottom:4px">📚 在预算内院校 (共 ${d.fits_count} 所) · 按综合排名取前 12:</div>
       <table style="width:100%;border-collapse:collapse"><tbody>${fitsHtml}</tbody></table>
-      <div class="dim" style="font-size:10px;margin-top:8px">数据源: ${d.source||""}</div>
+      <div class="dim" style="font-size:10px;margin-top:8px">数据源: ${d.source||""}</div>${jntSection}
     `;
   }catch(e){el.innerHTML=`<p class="dim" style="padding:24px 0;text-align:center">⚠️ 预算服务未启动</p>`;}
 }

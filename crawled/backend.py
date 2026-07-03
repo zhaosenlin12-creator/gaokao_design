@@ -828,8 +828,12 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, json.dumps({'error': 'not found'}, ensure_ascii=False).encode('utf-8'))
             disc = u.get('disc') or []
             ev = [{'discipline': d[0], 'grade': d[1]} for d in disc if len(d) >= 2]
-            sep = ZH.get('majors_sep', ' / ')
-            majors = (u.get('m') or '').split(sep) if u.get('m') else []
+            # 支持多种分隔符: " / " (slash), " · " (中点), "," "、" (顿号), 空格
+            majors = []
+            if u.get('m'):
+                import re
+                majors = [x.strip() for x in re.split(r'\s*[、/·,，]\s*', u['m']) if x.strip()]
+                if not majors: majors = [u['m']]
             dflt_tier = ZH.get('default_tier', 'x')
             dflt_subj = ZH.get('default_subj', 'x')
             u_rank = u.get('rank') or 0
@@ -995,8 +999,11 @@ class H(BaseHTTPRequestHandler):
             city_tier = q.get('city', ['tier2'])[0]  # tier1=北上广深, tier2=省会, tier3=其他
             include_private = q.get('private', ['0'])[0] == '1'  # 是否含民办
             include_joint = q.get('joint', ['0'])[0] == '1'  # 是否含中外合办
-            if not income or income < 10000:
-                return self._send(200, json.dumps({'error': '请输入家庭年收'}, ensure_ascii=False).encode('utf-8'))
+            if not income or income < 30000:
+                return self._send(200, json.dumps({
+                    'error': '请填写家庭年收入(元) — 公办 4 年总花费约 10-15 万, 民办 20-30 万, 中外合办 40-80 万',
+                    'hint': 'minimum_annual_income_cny=30000',
+                }, ensure_ascii=False).encode('utf-8'))
             # 4 年总预算: (学费 + 生活费) * 4
             cost_map = {
                 'tier1': 3000,  # 月生活费
@@ -1020,7 +1027,15 @@ class H(BaseHTTPRequestHandler):
             if include_joint and max_tuition_4y >= 500000:  # 年12.5万
                 tiers.append({'name': '中外合办(顶)', 'tuition_per_year': 150000, 'tag': '中外合办顶'})
             # 估算所有 1596 所的"在预算内"列表
+            # 公办按 tier 估学费; 中外合办/国际按名字识别; 其它都按公办
             tier2tuition = {'985': 6000, '211': 5500, 'dfc': 5200, 'ben': 5000}
+            JNT_KW = ['中外合作', '中外合办', '合作办学', '国际', '港澳台', '联合办学', '联合国际', '诺丁汉', '利物浦', '纽约大学', '昆山杜克', '香港中文', '粤港澳', '上海纽约', '澳门', 'UMD', '巴黎', '基尔', '瑞引', '玛丽', '肯恩', 'UIC', '国际关系学院']
+            def _is_joint(n):
+                return any(kw in n for kw in JNT_KW)
+            def _tuition_of(u):
+                n = u.get('n','')
+                if _is_joint(n): return 60000   # 中外合办 6w/年
+                return tier2tuition.get(u.get('t','ben'), 5000)
             # 数据质量过滤: 排除已停止招生 / 转设 / 军校 / 高职 / 排名缺失
             def _valid_uni(u):
                 n = (u.get('n') or '').strip()
@@ -1035,21 +1050,22 @@ class H(BaseHTTPRequestHandler):
             fits = []
             for u in UNIS:
                 if not _valid_uni(u): continue
-                tier = u.get('t', 'ben')
-                base_t = tier2tuition.get(tier, 5000)
-                if base_t * 4 > max_tuition_4y and not include_private:
-                    continue
-                # 公办一定在预算内 (因为最贵也就 4*7000=28000)
-                # 民办 (估算 2-5w) 需要收入 ≥ 10w
-                # 中外合办 (5-18w) 需要收入 ≥ 25w
+                base_t = _tuition_of(u)
+                is_joint = base_t >= 30000   # 中外合办档
+                # 严格按 4 年学费过滤 (不再被 include 标志绕过)
+                if base_t * 4 > max_tuition_4y: continue
+                # 勾选了含民办但本条是公办: 正常显示
+                # 勾选了含中外合办但本条是中外合办: 也正常显示
+                # 勾选了不包含的: 已经按学费过滤 (上一步)
                 fits.append({
                     'uni': u.get('n', ''),
-                    'tier': tier,
+                    'tier': u.get('t', 'ben'),
                     'tuition_per_year_est': base_t,
                     'total_4y_est': base_t * 4 + living,
                     'p': u.get('p', ''),
                     'c': u.get('c', ''),
                     'rank': u.get('rank', 0),
+                    'is_joint': is_joint,
                 })
             fits.sort(key=lambda x: x['rank'])
             # 风险提示
@@ -1067,7 +1083,9 @@ class H(BaseHTTPRequestHandler):
                 'living_4y': living,
                 'tiers': tiers,
                 'fits_count': len(fits),
+                'joint_count': sum(1 for x in fits if x.get('is_joint')),
                 'fits_top30': fits[:30],
+                'fits_joint_top': sorted([x for x in fits if x.get('is_joint')], key=lambda x: x['rank'])[:10],
                 'warning': warning,
                 'source': '公办学费 5-7k/民办 2-5w/中外合办 5-18w (教育部指导价)',
             }, ensure_ascii=False).encode('utf-8'))
