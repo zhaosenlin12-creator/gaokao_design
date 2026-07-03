@@ -1,7 +1,7 @@
 ﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Full local backend for gaokao-iframe (clean rewrite)
-import json, os, sqlite3, time, sys
+import json, os, sqlite3, time, sys, re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
@@ -831,9 +831,19 @@ class H(BaseHTTPRequestHandler):
             # 支持多种分隔符: " / " (slash), " · " (中点), "," "、" (顿号), 空格
             majors = []
             if u.get('m'):
-                import re
                 majors = [x.strip() for x in re.split(r'\s*[、/·,，]\s*', u['m']) if x.strip()]
                 if not majors: majors = [u['m']]
+            # 补充: A/B 档学科评估 + 常见通用本科专业(避免选校助手只有 1 个专业)
+            if len(majors) < 5:
+                for d in disc:
+                    if len(d) >= 2 and d[1][0] in ('A', 'B'):
+                        if d[0] not in majors:
+                            majors.append(d[0])
+                common = ['计算机科学与技术', '软件工程', '电子信息工程', '工商管理', '市场营销', '会计学', '金融学', '汉语言文学', '英语', '数学与应用数学', '法学', '行政管理', '国际经济与贸易', '机械设计制造及其自动化', '土木工程', '化学工程与工艺', '环境工程', '食品科学与工程', '应用心理学', '新闻学', '广告学', '公共事业管理']
+                for mj in common:
+                    if len(majors) >= 12: break
+                    if mj not in majors:
+                        majors.append(mj)
             dflt_tier = ZH.get('default_tier', 'x')
             dflt_subj = ZH.get('default_subj', 'x')
             u_rank = u.get('rank') or 0
@@ -999,10 +1009,9 @@ class H(BaseHTTPRequestHandler):
             city_tier = q.get('city', ['tier2'])[0]  # tier1=北上广深, tier2=省会, tier3=其他
             include_private = q.get('private', ['0'])[0] == '1'  # 是否含民办
             include_joint = q.get('joint', ['0'])[0] == '1'  # 是否含中外合办
-            if not income or income < 30000:
+            if not income or income < 10000:
                 return self._send(200, json.dumps({
-                    'error': '请填写家庭年收入(元) — 公办 4 年总花费约 10-15 万, 民办 20-30 万, 中外合办 40-80 万',
-                    'hint': 'minimum_annual_income_cny=30000',
+                    'error': '请填写家庭年收入(元) — 至少 1 万元以上',
                 }, ensure_ascii=False).encode('utf-8'))
             # 4 年总预算: (学费 + 生活费) * 4
             cost_map = {

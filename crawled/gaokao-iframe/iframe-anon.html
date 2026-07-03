@@ -679,9 +679,10 @@
     .luckbtn,.luckcard{display:none}   /* 每日签彩蛋仅桌面:移动端底部已挤(botbar 纵向 + 志愿表)*/
     .maplibregl-ctrl-top-right{transform:scale(.85);transform-origin:top right}
   }
-  /* 工具条收纳:默认只显 视角/投影/更多,其余(画风/天气/地形/配乐)收进「更多」 */
-  .toolbar #stylebtn,.toolbar #wxbtn,.toolbar #t3dbtn,.toolbar #musbtn{display:none}
-  .toolbar.more-open #stylebtn,.toolbar.more-open #wxbtn,.toolbar.more-open #t3dbtn,.toolbar.more-open #musbtn{display:flex}
+  /* 工具条收纳:默认只显 视角/投影/配乐/更多,其余(画风/天气/地形)收进「更多」 */
+  /* 配乐按钮常驻(用户主要诉求:左上角 ♫ 入口可开关音乐) */
+  .toolbar #stylebtn,.toolbar #wxbtn,.toolbar #t3dbtn{display:none}
+  .toolbar.more-open #stylebtn,.toolbar.more-open #wxbtn,.toolbar.more-open #t3dbtn{display:flex}
   #tb-toggle.on{background:rgba(189,154,85,.18)}
   /* 空间筛选下拉(按省份聚焦)+ 移动端底部抽屉抓手 */
   /* 省份下拉:自绘国风菜单(原生 select 弹层无法主题化、过于朴素)——纸面 + 楷体 + 朱砂勾选 */
@@ -765,7 +766,7 @@
   <button class="tbtn" id="rotbtn" aria-label="视角模式:平移 / 旋转" title="视角:平移 — 点按切旋转模式(旋转模式下按住左键拖动转方位 / 俯仰)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12a8 8 0 0 1 13.7-5.6L20 8"/><path d="M20 3.5V8h-4.5"/><path d="M20 12a8 8 0 0 1-13.7 5.6L4 16"/><path d="M4 20.5V16h4.5"/></svg></button>
   <button class="tbtn on" id="wxbtn" aria-label="分区天气开关" title="分区天气:江南雨·云贵雾·东北雪·西北黄沙·内蒙风 — 点按关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M7 14.5a3.4 3.4 0 0 1 .4-6.8 4.5 4.5 0 0 1 8.7 1.2A3 3 0 0 1 16 14.5Z"/><path d="M8 17.5l-1 2.6M12 17.5l-1 2.6M16 17.5l-1 2.6"/></svg></button>
   <button class="tbtn" id="t3dbtn" aria-label="地形:平面 / 立体 3D" title="地形:平面(超流畅)— 点按切换立体 3D"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M12 3 21 7.5 12 12 3 7.5Z"/><path d="M3 12 12 16.5 21 12"/><path d="M3 16.5 12 21 21 16.5"/></svg></button>
-  <button class="tbtn" id="musbtn" aria-label="配乐:关 — 点按播放" title="配乐:Calm Piano(轻钢琴 · alex-morgan / Pixabay)— 点按播放 / 静音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17V5l10-2v12"/><circle cx="6.5" cy="17" r="2.5"/><circle cx="16.5" cy="15" r="2.5"/></svg></button>
+  <button class="tbtn" id="musbtn" aria-label="配乐:关 — 点按播放" title="配乐:轻钢琴(Leberch · Inspirational Calm Romantic Story Piano)— 点按播放 / 静音"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17V5l10-2v12"/><circle cx="6.5" cy="17" r="2.5"/><circle cx="16.5" cy="15" r="2.5"/></svg></button>
   <button class="tbtn on" id="globebtn" aria-label="投影:地球 / 平面画卷" title="投影:地球(概览微曲)— 点按切平面画卷"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18"/></svg></button>
   <button class="tbtn" id="tb-toggle" aria-label="更多显示设置:画风 / 天气 / 地形 / 配乐" title="更多:画风 / 天气 / 地形 / 配乐" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg></button>
 </div>
@@ -2163,7 +2164,7 @@ function renderBudget(){
   const saved=(function(){try{return JSON.parse(localStorage.getItem("gk_budget")||"{}")}catch(e){return{}}})();
   document.getElementById("budget-body").innerHTML=`
     <div class="vizctl" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-      <label>家庭年收入(元)<input type="number" id="bd-income" value="${saved.income||120000}" min="30000" step="10000" placeholder="如 120000" style="width:130px" title="家庭年税后收入(元)·本工具按此估算 4 年总预算"></label>
+      <label>家庭年收入(元)<input type="number" id="bd-income" value="${saved.income||120000}" min="10000" step="10000" placeholder="如 120000 (年 12 万)" style="width:140px" title="家庭年税后收入(元)·本工具按此估算 4 年总预算"></label>
       <label>城市<input type="text" id="bd-city" list="bd-city-list" value="${saved.city||"tier2"}" style="width:100px">
         <datalist id="bd-city-list"><option value="tier1">一线(北上广深)</option><option value="tier2">省会/二线</option><option value="tier3">其他</option></datalist>
       </label>
@@ -3020,7 +3021,7 @@ document.addEventListener("visibilitychange",()=>{
   if(document.hidden){if(wxRAF){cancelAnimationFrame(wxRAF);wxRAF=0;}}else wxStart();});
 // ---------- 配乐:轻钢琴《Calm Piano》(alex-morgan · Pixabay · 可商用)----------
 // 默认关、绝不自动外放(也合浏览器策略);单曲循环 + 淡入淡出 + localStorage 记忆 + 切后台暂停。
-const BGM=new Audio("assets/audio/calm-piano.mp3");
+const BGM=new Audio("assets/bgm.mp3");
 BGM.loop=true;BGM.preload="none";BGM.volume=0;
 const BGM_VOL=0.3;let bgmOn=false,bgmFadeT=0;
 function bgmFadeTo(target){clearInterval(bgmFadeT);
