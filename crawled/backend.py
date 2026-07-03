@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Full local backend for gaokao-iframe (clean rewrite)
 import json, os, sqlite3, time, sys, re
@@ -1077,6 +1077,87 @@ class H(BaseHTTPRequestHandler):
                     'is_joint': is_joint,
                 })
             fits.sort(key=lambda x: x['rank'])
+            # ===== AI 增强(可选):按分数/位次 + 预算,反推"该收入能上的最好学校" =====
+            # 思路:
+            #   1) 位次 → 候选综合排名上限 rank_cap (经验值, 一本线段参考 985/211 历年投档线反推)
+            #   2) 在 UNIS 中按"分数够得着"(rank <= rank_cap) 选 8 所
+            #   3) 标记每校"是否在预算内"(fits 内) — 让用户看到:这所考得上但可能读不起
+            #   4) LLM 评价"性价比" / "可冲可保" (有 LLM 走 LLM, 无则规则兜底)
+            score = int(q.get('score', ['0'])[0] or 0)
+            prov_q = q.get('prov', [''])[0] or None
+            subj_q = q.get('subj', [''])[0] or None
+            rank_my = 0
+            if score and prov_q and subj_q:
+                try: rank_my = _score_to_rank(score, prov_q, subj_q)
+                except Exception: rank_my = 0
+            recommended = []
+            tier_band = None
+            rank_cap = 0
+            if rank_my > 0:
+                # 经验公式: rank_cap ≈ rank_my / 250, 范围 8-1500
+                #   位次 2000 → cap=8 (清北); 10000 → cap=40 (武大/华科); 50000 → cap=200 (中上 211)
+                rank_cap = max(8, min(1500, int(rank_my / 700)))   # 位次/700, 1万->14, 5万->71, 10万->143
+                # 目标 rank (推荐段): 取 cap/2, 排序时按距 target 越近越好
+                rank_target = max(8, int(rank_cap / 2))
+                if rank_my <= 2000:        tier_band = '冲清北复交浙'
+                elif rank_my <= 5000:      tier_band = '稳 985 顶尖 / 冲清北复交浙'
+                elif rank_my <= 10000:     tier_band = '稳中上 985 / 强 211 顶尖'
+                elif rank_my <= 20000:     tier_band = '稳 985 中 / 强 211'
+                elif rank_my <= 40000:     tier_band = '稳 211 / 强双一流'
+                elif rank_my <= 80000:     tier_band = '强双一流 / 公办本科'
+                elif rank_my <= 150000:    tier_band = '公办本科'
+                else:                      tier_band = '公办本科(末段) / 民办'
+                fits_set = {(x.get('uni') or '').strip(): x for x in fits}
+                for u in UNIS:
+                    ur = u.get('rank') or 0
+                    if ur <= 0 or ur > rank_cap: continue
+                    in_fit = (u.get('n') or '').strip() in fits_set
+                    fit_info = fits_set.get((u.get('n') or '').strip()) if in_fit else None
+                    disc = u.get('disc') or []
+                    aplus = sum(1 for d in disc if len(d) > 1 and d[1] == 'A+')
+                    recommended.append({
+                        'uni': u.get('n',''),
+                        'tier': u.get('t', 'ben'),
+                        'p': u.get('p',''),
+                        'c': u.get('c',''),
+                        'rank': ur,
+                        'aplus_count': aplus,
+                        'in_budget': in_fit,
+                        'tuition_per_year_est': fit_info.get('tuition_per_year_est') if fit_info else _tuition_of(u),
+                    })
+                recommended.sort(key=lambda x: (abs((x.get('rank') or 9e9) - rank_target), -x.get('aplus_count') or 0))   # 距目标 rank 越近越优先
+                # 至少 6 校, 优先选预算内的 (in_budget=True 排前面)
+                in_b = [x for x in recommended if x.get('in_budget')]
+                out_b = [x for x in recommended if not x.get('in_budget')]
+                recommended = in_b[:8] + out_b[:max(0, 8-len(in_b))]
+            # AI 简评
+            ai_advice = None
+            if score and prov_q and subj_q and rank_my > 0 and recommended:
+                try:
+                    _rec = _llm_recommend_cached(score, prov_q, subj_q, None, None, None)
+                    if _rec and isinstance(_rec, dict) and _rec.get('notes'):
+                        ai_advice = {'_llm': True, 'notes': _rec['notes'][:3]}
+                except Exception:
+                    pass
+                if not ai_advice:
+                    t = max_tuition_4y
+                    if t < 28000:
+                        bud = "预算偏紧,优先公办;避免民办和中外合办"
+                    elif t < 100000:
+                        bud = "预算可覆盖公办,若要冲民办/中外合办需谨慎"
+                    elif t < 400000:
+                        bud = "预算较宽裕,公办/民办/普通中外合办都可考虑"
+                    else:
+                        bud = "预算充裕,选校可优先看学校实力、专业排名"
+                    n_in = sum(1 for x in recommended if x.get('in_budget'))
+                    ai_advice = {
+                        '_llm': False,
+                        'notes': [
+                            f"按 {score} 分 / 位次 {rank_my:,} 估算 → 适合{tier_band or '该位次段'}",
+                            f"共 {len(recommended)} 校:其中 {n_in} 校在预算内,可直接考虑",
+                            f"提示:{bud}",
+                        ]
+                    }
             # 风险提示
             if max_tuition_4y < 28000:
                 warning = "预算仅能覆盖公办普通类, 民办 / 中外合办院校无法承担, 选校范围可能受限"
@@ -1097,6 +1178,10 @@ class H(BaseHTTPRequestHandler):
                 'fits_joint_top': sorted([x for x in fits if x.get('is_joint')], key=lambda x: x['rank'])[:10],
                 'warning': warning,
                 'source': '公办学费 5-7k/民办 2-5w/中外合办 5-18w (教育部指导价)',
+                'my_rank': rank_my if rank_my > 0 else None,
+                'my_score': score if score > 0 else None,
+                'recommended': recommended,
+                'ai_advice': ai_advice,
             }, ensure_ascii=False).encode('utf-8'))
         if p == '/api/uni/career':
             # 就业前景分析: 多个真实数据维度综合

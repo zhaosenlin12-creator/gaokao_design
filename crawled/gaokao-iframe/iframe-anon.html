@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+﻿﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -361,7 +361,7 @@
   .fav-sync button{padding:5px 9px;border:1px solid #c5ab7c;border-radius:6px;background:#fdf8ea;color:#4a3414;font:600 12px "Kaiti SC","STKaiti",serif;cursor:pointer;letter-spacing:1px}
   .fav-sync button:hover{background:#8c2f1b;color:#f7e8d6;border-color:#8c2f1b}
   .fav-sync .gks-on{color:#5a7d3a;font:600 12px "Kaiti SC","STKaiti",serif}
-  .fav-sync .gks-note{margin-top:6px;color:#9a8757;font:400 10.5px/1.5 system-ui,sans-serif}
+  .fav-sync .gks-note{margin-top:6px;color:#9a8757;font:400 10.5px/1.5 system-ui,sans-serif}.fav-sync .gks-stats{margin-top:6px;font:500 10.5px "Microsoft YaHei",system-ui,sans-serif;color:#7a5f33;letter-spacing:.3px}
   /* 彩蛋:每日幸运签 */
   .luckbtn{position:absolute;left:18px;bottom:20px;z-index:8;cursor:pointer;border:1px solid #c5ab7c;border-radius:999px;
     background:rgba(252,246,230,.95);color:#8c2f1b;font:600 13px "Kaiti SC","STKaiti",serif;letter-spacing:1px;padding:7px 13px;box-shadow:0 2px 8px rgba(80,55,20,.2)}
@@ -893,6 +893,11 @@
 <script src="vendor/maplibre-gl.js"></script>
 <script src="gk-engine.js?v=10"></script>
 <script>
+
+// === gk:data-changed dispatch helper (added by patch) ===
+window.__gkDispatch = function(){
+  try { document.dispatchEvent(new CustomEvent("gk:data-changed")); } catch(_e) {}
+};
 let UNIS=[],DOTS=[],CITYIDX=[],PROVIDX=[],UINFO={};
 // 由各校所在城市聚合出"城市"索引(质心坐标 + 院校数),供搜索把城市作为独立结果
 function buildCityIndex(){
@@ -2185,11 +2190,14 @@ async function runBudget(){
   const city=document.getElementById("bd-city").value||"tier2";
   const priv=document.getElementById("bd-private").checked?"1":"0";
   const jt=document.getElementById("bd-joint").checked?"1":"0";
-  localStorage.setItem("gk_budget",JSON.stringify({income,city,private:!!+priv,joint:!!+jt}));
+  localStorage.setItem("gk_budget",JSON.stringify({income,city,private:!!+priv,joint:!!+jt}));window.__gkDispatch&&window.__gkDispatch();
   const el=document.getElementById("bd-result");
   el.innerHTML='<p class="dim" style="padding:24px 0;text-align:center">计算中…</p>';
   try{
-    const d=await(await fetch(`${API}/api/budget?income=${income}&city=${city}&private=${priv}&joint=${jt}`)).json();
+    const _scEl=document.getElementById("rp-score"),_pvEl=document.getElementById("rp-prov"),_sjEl=document.getElementById("rp-subj");
+    const _sc=_scEl&&_scEl.value?+_scEl.value:0, _pv=_pvEl&&_pvEl.value?_pvEl.value:"", _sj=_sjEl&&_sjEl.value?_sjEl.value:"";
+    const _extra=_sc?"&score="+_sc+"&prov="+encodeURIComponent(_pv)+"&subj="+encodeURIComponent(_sj):"";
+    const d=await(await fetch(`${API}/api/budget?income=${income}&city=${city}&private=${priv}&joint=${jt}${_extra}`)).json();
     if(d.error){el.innerHTML=`<p class="dim">⚠️ ${d.error}</p>`;return;}
     const tierHtml=d.tiers.map(t=>`<span class="tag" style="margin-right:4px;background:#f6e3d0;color:#7a3a1a">${t.name} <b>${t.tuition_per_year}</b>元/年</span>`).join("");
     // 表格: 12 校综合排名靠前 + (如勾选含中外合办) 10 所中外合办 (jnt 校排名靠后单独列出, 不会被 top12 掩盖)
@@ -2224,9 +2232,11 @@ async function runBudget(){
       </div>
       <div style="margin-bottom:8px;font-size:12px"><b>可承担院校类别:</b>${tierHtml||'<span class="dim">无 - 预算过低</span>'}</div>
       <div style="margin-bottom:10px;padding:8px;background:rgba(216,90,48,.06);border-radius:6px;font-size:12px;color:#7a3a1a">💡 ${d.warning||""}</div>
-      <div style="font-size:12px;color:#4a3414;margin-bottom:4px">📚 在预算内院校 (共 ${d.fits_count} 所) · 按综合排名取前 12:</div>
+      ${(d.recommended&&d.recommended.length)?`<div style="margin-bottom:14px;padding:12px;background:linear-gradient(135deg,rgba(29,158,117,.06),rgba(255,243,210,.1));border-radius:8px;border:1px solid rgba(29,158,117,.18)"><div style="font-size:13px;font-weight:600;color:#1d6b50;margin-bottom:6px">📍 按分数 / 预算 智能推荐 (${d.my_score?(d.my_score+"分 · 位次 "+(d.my_rank||0).toLocaleString()):"未填分数"})</div><div style="font-size:10.5px;color:#7d6536;margin-bottom:6px">基于你的分数段和预算,以下是 "够得着又能上" 的院校:</div><table style="width:100%;border-collapse:collapse"><tbody>${d.recommended.map(s=>{const tl=s.tier==="985"?"985":s.tier==="211"?"211":s.tier==="dfc"?"双一流":"";const bg=s.in_budget?"#1d9e75":"#b08040";const ico=s.in_budget?"✅":"⚠️";const ymark=s.in_budget?"":"color:#9c6b30";return `<tr><td style="padding:5px 6px;font-size:12px"><b>${s.uni}</b> ${tl?`<span style="font-size:10px;color:#7d6536">${tl}</span>`:""}</td><td style="font-size:10px;color:#7d6536;text-align:center">#${s.rank||"-"}</td><td style="font-size:10.5px;color:${bg};text-align:right;${ymark}">${ico} ${s.in_budget?"预算内":"¥"+(s.tuition_per_year_est||0)+"/年"}</td></tr>`;}).join("")}</tbody></table></div>`:""}<div style="font-size:12px;color:#4a3414;margin-bottom:4px">📚 在预算内院校 (共 ${d.fits_count} 所) · 按综合排名取前 12:</div>
       <table style="width:100%;border-collapse:collapse"><tbody>${fitsHtml}</tbody></table>
-      <div class="dim" style="font-size:10px;margin-top:8px">数据源: ${d.source||""}</div>${jntSection}
+      <div style="font-size:10.5px;color:#7d6536;margin-top:8px">📊 位次参考: ${d.my_score?d.my_score+"分 · 全省位次 "+(d.my_rank||0).toLocaleString():"未填分数"}</div>
+      <div class="dim" style="font-size:10px;margin-top:4px">数据源: ${d.source||""}</div>${jntSection}
+      ${d.ai_advice?`<div style="margin-top:12px;padding:10px 12px;background:linear-gradient(135deg,rgba(157,47,27,.04),rgba(196,151,90,.06));border-left:3px solid #8c2f1b;border-radius:4px;font-size:12px;line-height:1.7"><div style="font-weight:600;color:#8c2f1b;margin-bottom:4px">🤖 ${d.ai_advice._llm?"AI 智能简评":"智能分析"}</div>${(d.ai_advice.notes||[]).map(n=>`<div style="color:#5d4520;margin-top:2px">· ${n}</div>`).join("")}</div>`:""}
     `;
   }catch(e){el.innerHTML=`<p class="dim" style="padding:24px 0;text-align:center">⚠️ 预算服务未启动</p>`;}
 }
@@ -2629,7 +2639,7 @@ async function qzFinish(){
     const qs=`scores=${["R","I","A","S","E","C"].map(d=>sums[d]).join(",")}`;
     const r=await (await fetch(`${API}/api/quiz/match?${qs}`)).json();
     try{window.PROFILE={ts:Date.now(),sums,top:(r.top||[]).map(t=>t.mclass).filter(Boolean)};   // 存方向:供院校对比锚定
-        localStorage.setItem('gk_profile',JSON.stringify(window.PROFILE));}catch(e){}
+        localStorage.setItem('gk_profile',JSON.stringify(window.PROFILE));window.__gkDispatch&&window.__gkDispatch();}catch(e){}
     let html='<div style="margin-bottom:6px">';
     for(const[k,v]of Object.entries(r.profile))
       html+=`<div class="qz-dim"><b>${k}</b><div class="qz-bar"><i style="width:${v}%"></i></div><span>${v}</span></div>`;
@@ -3173,7 +3183,7 @@ const favKey=it=>it.n+"|"+(it.major||"");
 const favHas=k=>FAV.some(x=>favKey(x)===k);
 const llOf=name=>{const u=UNIS.concat(DOTS).find(x=>x.n===name);return u?u.ll:null;};
 const tierZh=t=>t==="985"?"985":t==="211"?"211":t==="dfc"?"双一流":"本科";
-function favSave(){try{localStorage.setItem("gk_fav",JSON.stringify(FAV));}catch(e){}favRender();}
+function favSave(){try{localStorage.setItem("gk_fav",JSON.stringify(FAV));window.__gkDispatch&&window.__gkDispatch();}catch(e){}favRender();}
 function favToggle(it){const k=favKey(it),i=FAV.findIndex(x=>favKey(x)===k);
   const added=i<0;if(added){FAV.push(it);hap();}else FAV.splice(i,1);favSave();
   toast(added?"已加入志愿表":"已移出志愿表");return added;}
@@ -3275,80 +3285,83 @@ function cardFavHTML(it){const k=favKey(it),on=favHas(k);
   });
   favRender();
 })();
-// ---------- 云同步:登录(AgentFeed)后把 志愿表 + 测评 存到账号;匿名态零存 ----------
-// 同域复用 next-auth 会话(cookie),挂在 gk_fav(志愿表)/ gk_profile(测评)两个 localStorage 键上;
-// 后端 /api/gaokao/profile(GET 401=未登录 / PUT 整存 / DELETE 清除)。显式同步,不自动上传。
+// ---------- 本地存储:志愿表 + 测评自动存浏览器,支持 JSON 备份还原 ----------
+// 取消登录入口(简化产品),改为:本地即存 + 显式 JSON 导入/导出(可手动跨设备迁移)。
+// 键约定:gk_fav=志愿表 / gk_profile=测评 / gk_budget=家庭预算 / gk_bgm=音乐开关 / gk_onboard=引导完成
 (function(){
   const box=document.getElementById("fav-sync"); if(!box)return;
-  const EP="/api/gaokao/profile";                                   // 同域 Next.js 路由(非 ${API} 的只读服务)
-  const LOGIN="/auth/signin?callbackUrl="+encodeURIComponent(location.href);
-  let signedIn=false, cloud=null;
-  // 恢复云端后(reload 前已写好 localStorage),回填推荐表单 省份/科类/分数 —— 尽力而为
-  try{const f=sessionStorage.getItem("gk_restore_form");
-    if(f){sessionStorage.removeItem("gk_restore_form");const o=JSON.parse(f)||{};
-      const set=(id,v)=>{const el=document.getElementById(id);if(el&&v!=null&&v!=="")el.value=v;};
-      set("rp-prov",o.province);set("rp-subj",o.track);set("rp-score",o.score);}
-  }catch(e){}
+  const KEYS=["gk_fav","gk_profile","gk_budget","gk_bgm","gk_onboard","gk_alwaysintro"];
+  const readKey=k=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):null;}catch(e){return null;}};
   function snapshot(){
-    let fav=[],prof=null;
-    try{fav=JSON.parse(localStorage.getItem("gk_fav")||"[]");}catch(e){}
-    try{prof=JSON.parse(localStorage.getItem("gk_profile")||"null");}catch(e){}
-    const gv=id=>{const el=document.getElementById(id);return el&&el.value?String(el.value).trim():"";};
-    const sc=parseInt(gv("rp-score"),10);
-    return {wishlist:Array.isArray(fav)?fav:[], quiz:prof||undefined,
-            province:gv("rp-prov")||null, track:gv("rp-subj")||null,
-            score:Number.isFinite(sc)?sc:null};
+    const out={_v:1,_t:Date.now(),_app:"gaokao-iframe"};
+    for(const k of KEYS){if(localStorage.getItem(k)!=null)out[k]=localStorage.getItem(k);}
+    return out;
   }
-  const hasData=p=>!!(p&&(((p.wishlist||[]).length)||p.quiz||p.province||p.score));
+  function stats(){
+    const fav=readKey("gk_fav")||[]; const prof=readKey("gk_profile");
+    const bud=readKey("gk_budget");
+    const n=Array.isArray(fav)?fav.length:0;
+    const q=prof&&prof.answers?Object.keys(prof.answers).length:0;
+    const b=bud&&typeof bud.total==="number"?"¥"+(bud.total/10000).toFixed(1)+"万":"未填";
+    return{n,q,b};
+  }
   function render(){
-    if(!signedIn){
-      box.innerHTML='<div class="gks-row"><button id="gks-login">☁ 登录以保存进度</button></div>'+
-        '<div class="gks-note">用 AgentFeed 账号把志愿表 / 测评存下来,换设备也能恢复。匿名使用不保存任何数据。</div>';
-      const b=document.getElementById("gks-login"); if(b)b.onclick=()=>{location.href=LOGIN;};
-      return;
-    }
-    box.innerHTML='<div class="gks-row"><span class="gks-on">☁ 已登录</span>'+
-      '<button id="gks-save">保存到云端</button>'+
-      (hasData(cloud)?'<button id="gks-load">恢复云端</button><button id="gks-clear">清除云端</button>':'')+
-      '</div><div class="gks-note">保存即同意将你的志愿表、测评、省份与分数存入账号,可随时「清除云端」。</div>';
-    const sv=document.getElementById("gks-save"); if(sv)sv.onclick=push;
-    const ld=document.getElementById("gks-load"); if(ld)ld.onclick=pull;
-    const cl=document.getElementById("gks-clear"); if(cl)cl.onclick=clear;
+    const s=stats();
+    box.innerHTML=
+      '<div class="gks-row">'+
+        '<span class="gks-on" title="数据仅保存在你本机浏览器">📦 本地存储</span>'+
+        '<button id="gks-export" title="下载 JSON 备份到本地">导出备份</button>'+
+        '<button id="gks-import" title="从 JSON 备份还原">导入还原</button>'+
+        '<button id="gks-wipe"  title="清除所有本地数据">清除</button>'+
+      '</div>'+
+      '<div class="gks-stats">志愿 '+s.n+' · 测评 '+s.q+'/30 · 预算 '+s.b+'</div>'+
+      '<div class="gks-note">数据只存在你这台浏览器的 localStorage，不联网、不上传。换浏览器或清除浏览器数据会丢失，请定期「导出备份」。</div>';
+    document.getElementById("gks-export").onclick=doExport;
+    document.getElementById("gks-import").onclick=doImport;
+    document.getElementById("gks-wipe").onclick=doWipe;
   }
-  async function push(){
+  function doExport(){
     try{
-      const r=await fetch(EP,{method:"PUT",credentials:"include",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify(snapshot())});
-      if(r.status===401){signedIn=false;render();toast("登录已过期,请重新登录");return;}
-      if(!r.ok){toast("保存失败,请重试");return;}
-      const d=await r.json().catch(()=>({})); cloud=d.profile||snapshot(); render(); toast("已保存到云端");
-    }catch(e){toast("网络异常,保存失败");}
+      const data=JSON.stringify(snapshot(),null,2);
+      const blob=new Blob([data],{type:"application/json"});
+      const a=document.createElement("a");
+      const d=new Date(),stamp=d.getFullYear()+""+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+"-"+String(d.getHours()).padStart(2,"0")+String(d.getMinutes()).padStart(2,"0");
+      a.href=URL.createObjectURL(blob);
+      a.download="gaokao-backup-"+stamp+".json";
+      document.body.appendChild(a); a.click();
+      setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
+      toast("已下载备份文件");
+    }catch(e){toast("导出失败:"+e.message);}
   }
-  async function pull(){
-    if(!hasData(cloud))return;
-    if(!confirm("用云端数据覆盖当前志愿表 / 测评?本地未保存的改动会丢失。"))return;
-    try{
-      if(Array.isArray(cloud.wishlist))localStorage.setItem("gk_fav",JSON.stringify(cloud.wishlist));
-      if(cloud.quiz)localStorage.setItem("gk_profile",JSON.stringify(cloud.quiz));
-      sessionStorage.setItem("gk_restore_form",JSON.stringify({province:cloud.province||"",track:cloud.track||"",score:cloud.score||""}));
-      location.reload();
-    }catch(e){toast("恢复失败,请重试");}
+  function doImport(){
+    const inp=document.createElement("input");
+    inp.type="file"; inp.accept="application/json,.json";
+    inp.onchange=()=>{
+      const f=inp.files&&inp.files[0]; if(!f)return;
+      const r=new FileReader();
+      r.onload=()=>{
+        try{
+          const obj=JSON.parse(r.result);
+          if(!obj||obj._app!=="gaokao-iframe"){toast("备份文件不匹配");return;}
+          if(!confirm("用此备份覆盖当前志愿表 / 测评 / 预算?本地未导出的改动会丢失。"))return;
+          for(const k of KEYS){if(obj[k]!=null)localStorage.setItem(k,obj[k]);}
+          location.reload();
+        }catch(e){toast("文件解析失败:"+e.message);}
+      };
+      r.readAsText(f);
+    };
+    inp.click();
   }
-  async function clear(){
-    if(!confirm("清除云端保存的高考数据?本地志愿表不受影响。"))return;
-    try{
-      const r=await fetch(EP,{method:"DELETE",credentials:"include"});
-      if(!r.ok&&r.status!==401){toast("清除失败,请重试");return;}
-      cloud=null;render();toast("已清除云端数据");
-    }catch(e){toast("网络异常");}
+  function doWipe(){
+    if(!confirm("清除所有本地数据(志愿表/测评/预算/设置)?此操作不可恢复。"))return;
+    if(!confirm("再次确认:真的要清除全部本地数据吗?"))return;
+    for(const k of KEYS)try{localStorage.removeItem(k);}catch(e){}
+    toast("已清除,正在刷新"); setTimeout(()=>location.reload(),600);
   }
-  (async function(){
-    try{const r=await fetch(EP,{credentials:"include"});
-      if(r.ok){signedIn=true;const d=await r.json().catch(()=>({}));cloud=d.profile||null;}
-      else signedIn=false;
-    }catch(e){signedIn=false;}
-    render();
-  })();
+  // 监听其他模块写 localStorage(志愿表/测评/预算),自动刷新统计
+  window.addEventListener("storage",e=>{if(KEYS.includes(e.key))render();});
+  document.addEventListener("gk:data-changed",render);
+  render();
 })();
 // 彩蛋:每日幸运签(高考吉祥话)—— 按当天日期确定性抽一签,当日不变、次日换新
 (function(){
