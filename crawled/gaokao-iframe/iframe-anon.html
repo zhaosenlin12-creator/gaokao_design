@@ -1,4 +1,4 @@
-﻿﻿<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -585,9 +585,9 @@
     .card .dtab{min-width:480px}                               /* 手机窄屏时表格横向滚动(4 年列) */
   }
   /* 院校对比模态 */
-  .cmppanel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.96);z-index:9;
-    width:min(720px,94vw);max-height:88vh;overflow:auto;display:none;opacity:0;padding:18px 20px;border-radius:16px;
-    background:linear-gradient(180deg,var(--paper-a),var(--paper-b));border:1px solid var(--gold-soft);box-shadow:var(--elev);
+  .cmppanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.96);z-index:51;
+    width:min(720px,94vw);max-height:88vh;overflow:auto;display:none;opacity:0;padding:22px 24px 18px;border-radius:14px;
+    background:linear-gradient(180deg,var(--paper-a),var(--paper-b));border:1px solid var(--gold-soft);box-shadow:0 24px 60px rgba(40,28,12,.45),0 4px 14px rgba(40,28,12,.22);
     -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);transition:opacity .3s ease,transform .35s cubic-bezier(.22,1,.36,1)}
   .cmppanel.show{display:block;opacity:1;transform:translate(-50%,-50%) scale(1)}
   .cmppanel h3{margin:0 0 10px;font:600 17px "Kaiti SC","STKaiti",serif;color:var(--ink);letter-spacing:2px;display:flex;align-items:center;gap:8px}
@@ -638,9 +638,10 @@
   .cmp-hint{font-size:11px;color:#9c2f1b;font-weight:400}
   .cmp-nm{display:block;font-size:11.5px;margin-top:2px}
   /* 一分一段可视化面板(居中模态 + 遮罩) */
-  .vizmask{position:absolute;inset:0;z-index:8;background:rgba(60,45,20,.22);display:none}
+  .vizmask{position:fixed;inset:0;z-index:50;background:rgba(40,28,12,.65);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:none}
   .vizmask.show{display:block;animation:fadeUp .3s ease}
-  .vizpanel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) scale(.96);z-index:9;
+  body:has(.vizmask.show) .titlebar,body:has(.vizmask.show) .chips,body:has(.vizmask.show) .tbar,body:has(.vizmask.show) .toolbar,body:has(.vizmask.show) #search,body:has(.vizmask.show) .luckbtn,body:has(.vizmask.show) .favbtn,body:has(.vizmask.show) .botbar{opacity:0;pointer-events:none;transition:opacity .25s ease}
+  .vizpanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.96);z-index:51;
     width:min(700px,93vw);max-height:88vh;overflow-y:auto;display:none;opacity:0;padding:18px 22px;border-radius:16px;
     background:linear-gradient(180deg,var(--paper-a),var(--paper-b));border:1px solid var(--gold-soft);box-shadow:var(--elev);
     -webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px);transition:opacity .3s ease,transform .35s cubic-bezier(.22,1,.36,1)}
