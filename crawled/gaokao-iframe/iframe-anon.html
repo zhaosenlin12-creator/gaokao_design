@@ -614,6 +614,22 @@
   .cmp-dir-gl{font-size:10.5px;color:#8a7656;font-weight:400;margin-top:1px}
   .cmp-dir-gl b{font-weight:700}
   .cmp-val{display:inline-block;font-size:9.5px;font-weight:700;color:#fff;background:var(--zhu);border-radius:4px;padding:1px 6px;margin-top:3px;letter-spacing:.5px}
+  /* ===== 对比 v2 增强 ===== */
+  .cmp-prof-row td{padding:10px 8px;background:rgba(189,154,85,.04);border-bottom:1px dashed #e0d0aa;vertical-align:top}
+  .cmp-prof-tags{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px}
+  .cmp-prof-tag{font:500 10px/1.4 system-ui,sans-serif;padding:2px 7px;border-radius:999px;background:rgba(157,47,27,.08);color:#8c2f1b;border:1px solid rgba(157,47,27,.15)}
+  .cmp-prof-intro{font:600 11.5px 'Kaiti SC',serif;color:#4a3414;line-height:1.5;margin-top:2px}
+  .cmp-prof-intro small{font-weight:400;color:#a8916a;font-size:10.5px;display:block;margin-top:2px}
+  .cmp-ai{padding:12px 14px;background:linear-gradient(135deg,rgba(157,47,27,.05),rgba(196,151,90,.08));border-left:3px solid #8c2f1b;border-radius:0 6px 6px 0;margin:6px 0;font-size:12px;line-height:1.7;color:#5d4520}
+  .cmp-ai-head{font:600 12.5px 'Kaiti SC',serif;color:#8c2f1b;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .cmp-ai-head b{background:#8c2f1b;color:#f7e8d6;padding:2px 8px;border-radius:999px;font-size:10.5px;letter-spacing:1px}
+  .cmp-ai-item{margin:3px 0;padding-left:14px;position:relative}
+  .cmp-ai-item:before{content:'';position:absolute;left:2px;top:9px;width:5px;height:5px;background:#8c2f1b;border-radius:50%}
+  .cmp-ai-vs{color:#9c2f1b;font-weight:600}
+  .cmp-trend-num{font:600 13px 'Kaiti SC',serif;color:#4a3414}
+  .cmp-trend-num.up{color:#1d9e75}
+  .cmp-trend-num.dn{color:#b06030}
+  .cmp-trend-num.flat{color:#7a6442}
   .cmp-ctrl-row td{text-align:center!important;background:none!important;border-bottom:0;padding:9px}
   .cmp-expand{font:600 12px "Kaiti SC",serif;color:var(--zhu);background:rgba(157,47,27,.07);border:1px dashed var(--gold-soft);border-radius:8px;padding:5px 12px;cursor:pointer}
   .cmp-expand:hover{background:rgba(157,47,27,.14)}
@@ -2286,31 +2302,119 @@ window.cmpToggleDir=function(c){const s=new Set(CMPV.dirs||cmpDirAvail(CMPV.ds||
 window.cmpToggleDiff=function(){CMPV.onlyDiff=!CMPV.onlyDiff;renderCompareBody();};
 window.cmpToggleExpand=function(){CMPV.expanded=!CMPV.expanded;renderCompareBody();};
 function renderCompareBody(){const el=document.getElementById('cmp-body');if(el&&CMPV.ds)el.innerHTML=buildCompare(CMPV.ds,CMPV.prov);}
+// 分数→位次: 用后端 /api/rank 拉一分一段表缓存后查表; 失败返回 null
+const _rankCache={};
+async function rankOfScore(score, prov){
+  if(!score||!prov)return null;
+  const key=prov+'|'+score;
+  if(key in _rankCache)return _rankCache[key];
+  try{
+    const r=await fetch(`${API}/api/rank?score=${score}&prov=${encodeURIComponent(prov)}`);
+    if(!r.ok){_rankCache[key]=null;return null;}
+    const j=await r.json();
+    const y=(j.years||[])[0];if(!y){_rankCache[key]=null;return null;}
+    const pts=(y.pts||[]).filter(p=>p&&p[1]>0);
+    if(!pts.length){_rankCache[key]=null;return null;}
+    // 找第一个 pts[i][0] >= score 的位次
+    let rank=null;
+    for(const p of pts){if(p[0]>=score){rank=p[1];break;}}
+    if(rank==null&&pts.length)rank=pts[pts.length-1][1];
+    _rankCache[key]=rank;return rank;
+  }catch(_e){_rankCache[key]=null;return null;}
+}
+
 function buildCompare(ds,prov){
-  if(ds.length<2)return '<p class="dim" style="padding:20px;text-align:center">数据不足</p>';
+    if(ds.length<2)return `<p class="dim" style="padding:20px;text-align:center">数据不足</p>`;
   const span=ds.length+1;
-  const rng=(arr,fmt)=>{if(!arr.length)return '—';const mn=Math.min(...arr),mx=Math.max(...arr);return mn===mx?fmt(mn):fmt(mn)+'–'+fmt(mx);};
+  const rng=(arr,fmt)=>{if(!arr.length)return `—`;const mn=Math.min(...arr),mx=Math.max(...arr);return mn===mx?fmt(mn):fmt(mn)+`–`+fmt(mx);};
   const rankR=u=>rng((u.lines||[]).filter(l=>l.granularity==='major'&&l.min_rank).map(l=>l.min_rank),v=>v.toLocaleString());
   const tuR=u=>rng(Object.values(u.plans||{}).map(p=>p.tuition).filter(Boolean),cnMoney);
-  const rows=[["层次",u=>u.tier||'—'],["城市",u=>u.city||u.province||'—'],["综合排名参考",u=>u.rank?'#'+u.rank:'—'],
-    ["保研率",u=>u.baoyan?u.baoyan+'%':'—'],["硕/博点",u=>`${u.masterPts||0}/${u.doctorPts||0}`],
-    [`${prov}位次区间`,u=>rankR(u)],["学费",u=>tuR(u)]];
-  let h='<table class="cmptab"><thead><tr><th></th>'+ds.map(u=>`<th>${badge(u.name,28)}<span class="cmp-nm">${u.name}</span></th>`).join('')+'</tr></thead><tbody>';
-  rows.forEach(([lab,fn])=>{h+=`<tr><td class="cl">${lab}</td>`+ds.map(u=>`<td>${fn(u)}</td>`).join('')+'</tr>';});
-  // —— 你的方向(测评锚定):优先比考生专业类的录取位次,全量学科/专业收起 ——
+  const rows=[["层次",u=>u.tier||`—`],["城市",u=>u.city||u.province||`—`],["综合排名参考",u=>u.rank?`#${u.rank}`:`—`],["保研率",u=>u.baoyan?`${u.baoyan}%`:`—`],["硕/博点",u=>`${u.masterPts||0}/${u.doctorPts||0}`],["招生人数",u=>((u.schoolStats||{}).enroll?`${((u.schoolStats||{}).enroll).toLocaleString()}人`:`—`)],["就业率",u=>((u.schoolStats||{}).employment?`${(u.schoolStats||{}).employment}%`:`—`)],["学费(参考)",u=>((u.schoolStats||{}).tuition?`${((u.schoolStats||{}).tuition).toLocaleString()}元/年`:tuR(u))],[prov+"位次区间",u=>rankR(u)],["学费",u=>tuR(u)]];
+  let h=`<table class="cmptab"><thead><tr><th></th>${ds.map(u=>`<th>${badge(u.name,28)}<span class="cmp-nm">${u.name}</span></th>`).join('')}</tr></thead><tbody>`;
+  rows.forEach(([lab,fn])=>{h+=`<tr><td class="cl">${lab}</td>${ds.map(u=>`<td>${fn(u)}</td>`).join('')}</tr>`;});
+  h+=`<tr class="cmp-sec-row"><td colspan="${span}">画像  定位</td></tr>`;
+  h+=`<tr class="cmp-prof-row"><td class="cl">标签</td>${ds.map(function(u){var tags=Array.isArray(u.tags)?u.tags:[];return `<td><div class="cmp-prof-tags">${tags.map(t=>`<span class="cmp-prof-tag">${t}</span>`).join('')}</div></td>`;}).join('')}</tr>`;
+  h+=`<tr class="cmp-prof-row"><td class="cl">强势  学科</td>${ds.map(function(u){var intro=u.intro||u.m||'';var discs=(u.eval||[]).slice(0,4);return `<td><div class="cmp-prof-intro">${intro}${discs.length?`<small>${discs.map(d=>`${d.discipline} <b style="color:#9c2f1b">${d.grade}</b>`).join(' ')}</small>`:''}</div></td>`;}).join('')}</tr>`;
+  var _orders=["A+","A","A-","B+","B","B-","C+","C","C-"];
+  var _cols={"A+":"#9c2f1b","A":"#1d9e75","A-":"#2e9a66","B+":"#c08a2a","B":"#a8862f","B-":"#9c8340","C+":"#8a7a5a","C":"#8a7a5a","C-":"#8a7a5a"};
+  var _maps=ds.map(function(u){var m={};(u.eval||[]).forEach(function(e){m[e.grade]=(m[e.grade]||0)+1;});return m;});
+  var _tots=_maps.map(function(m){var s=0;for(var i=0;i<_orders.length;i++){s+=(m[_orders[i]]||0);}return s;});
+  var _mxV=Math.max.apply(null,_tots.concat([1]));
+  h+=`<tr class="cmp-sec-row"><td colspan="${span}">学科  综合  实力  分布  (教育部  第四  轮  宽)</span></td></tr>`;
+  h+=`<tr><td colspan="${span}" style="padding:8px 6px;background:rgba(189,154,85,.03)"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="width:60px;font:600 10.5px system-ui;color:#7a6442">评级</th>${ds.map(function(u,i){return `<th style="font:600 11.5px system-ui;color:#4a3414;padding-bottom:4px">${badge(u.name,18)}<br><small style="font-weight:400;color:#7a6442">${_tots[i]} 个  学科</small></th>`;}).join('')}</tr></thead><tbody>`;
+  for(var _oi=0;_oi<_orders.length;_oi++){var _g=_orders[_oi];
+    h+=`<tr><td style="text-align:right;font:600 11px system-ui;color:${_cols[_g]};padding:3px 6px">${_g}</td>${ds.map(function(u,i){var _v=(_maps[i]||{})[_g]||0;var _pct=Math.max(0,Math.min(100,_v/_mxV*100));return `<td style="padding:3px 6px"><div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:11px;background:rgba(189,154,85,.08);border-radius:2px;overflow:hidden"><div style="width:${_v?Math.max(8,_pct):0}%;height:100%;background:${_cols[_g]};border-radius:2px;display:flex;align-items:center;justify-content:flex-end;padding-right:3px;color:#fff;font-size:9.5px;font-weight:600">${_v||''}</div></div></div></td>`;}).join('')}</tr>`;
+  }
+  h+=`</tbody></table></td></tr>`;
+  var _hists=ds.map(function(u){return (u.history||[]).slice().sort(function(a,b){return a.year-b.year;});});
+  var _ys=[];var _seen={};_hists.forEach(function(_h){_h.forEach(function(_x){if(!_seen[_x.year]){_seen[_x.year]=1;_ys.push(_x.year);}});});_ys.sort(function(a,b){return a-b;});
+  if(_ys.length){
+    var _aMx=0,_aMn=999999;
+    _hists.forEach(function(_h){_h.forEach(function(_x){if(_x.min_rank>0&&_x.min_rank>_aMx)_aMx=_x.min_rank;if(_x.min_rank>0&&_x.min_rank<_aMn)_aMn=_x.min_rank;});});
+    if(_aMn===999999)_aMn=0;
+    h+=`<tr class="cmp-sec-row"><td colspan="${span}">近年  录取  位次  趋势  (本省  分数线)</span></td></tr>`;
+    h+=`<tr><td colspan="${span}" style="padding:10px 6px;background:rgba(189,154,85,.03)"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="width:60px"></th>${ds.map(function(u){return `<th style="font:600 11.5px system-ui;color:#4a3414;padding-bottom:4px">${badge(u.name,18)}</th>`;}).join('')}</tr></thead><tbody>`;
+    for(var _yi=0;_yi<_ys.length;_yi++){var _y=_ys[_yi];
+      h+=`<tr><td style="text-align:right;font:600 11px system-ui;color:#7a6442;padding:2px 6px">${_y}</td>${ds.map(function(u,i){var _c=(_hists[i]||[]).find(function(_x){return _x.year===_y;});var _r=_c?_c.min_rank:null;var _sc=_c?_c.score:null;if(!_r)return `<td style="padding:2px 4px;color:#c2b288;font-size:10px">—</td>`;var _rt=(_aMx>_aMn&&_aMx>0)?((_aMx-_r)/(_aMx-_aMn)):0.5;var _bH=Math.max(6,Math.round(20+_rt*40));return `<td style="padding:2px 4px;vertical-align:bottom;text-align:center"><div style="display:inline-block;width:18px;height:${_bH}px;background:linear-gradient(180deg,#c08a2a,#8c2f1b);border-radius:2px 2px 0 0;vertical-align:bottom"></div><div style="font:600 11px system-ui;color:#4a3414;margin-top:2px">${_r.toLocaleString()}</div><div style="font-size:9.5px;color:#a8916a">${_sc||''} 分</div></td>`;}).join('')}</tr>`;
+    }
+    h+=`<tr><td colspan="${span}" style="padding:6px;border-top:1px dashed #e0d0aa"><div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11.5px;color:#4a3414">`;
+    var _trendLines=[];
+    ds.forEach(function(_u,_i){var _hs=_hists[_i]||[];if(_hs.length<2){_trendLines.push(`<span><b style="color:#7a6442">${_u.name}:</b> 数据不足</span>`);return;}var _f=_hs[0].min_rank,_l=_hs[_hs.length-1].min_rank;var _d=_l-_f;var _c=_d>20?"up":_d<-20?"dn":"flat";var _a=_d>20?"↑":_d<-20?"↓":"→";var _t=_d>20?`位次变化   近年相对轻松  `:_d<-20?`位次变小   竞争加剧  `:`近年位次稳定  `;_trendLines.push(`<span><b style="color:#7a6442">${_u.name}:</b> <span class="cmp-trend-num ${_c}">${_a} ${_t}</span></span>`);});
+    h+=_trendLines.join('')+`</div></td></tr>`;
+    h+=`</tbody></table></td></tr>`;
+  }
+  // —— 你的方向 ——
   const avail=cmpDirAvail(ds);
   if(avail.length){
     const sel=(CMPV.dirs||avail.slice(0,2)).filter(c=>avail.includes(c));
     const chips=avail.map(c=>`<button class="cmpdir-chip${sel.includes(c)?' on':''}" onclick="cmpToggleDir('${c}')">${c}</button>`).join('');
-    h+=`<tr class="cmp-sec-row cmp-dir-head"><td colspan="${span}">你的方向 · 按你的测评 <span>(▲ 录取位次更高 · ★ 学科更强 · ✦ 学科强却更好进=性价比)</span><div class="cmpdir-chips">${chips}</div></td></tr>`;
+    h+=`<tr class="cmp-sec-row cmp-dir-head"><td colspan="${span}">你的方向  ·  按你的测评  <span>(▲  录取位次更高  ·  ★  学科更强  ·  ✦  学科强却更好进=性价比)</span><div class="cmpdir-chips">${chips}</div></td></tr>`;
     h+=sel.length?cmpDirBody(ds,sel):`<tr><td colspan="${span}" class="cmp-note">点上面的方向,看两校在该方向的录取位次</td></tr>`;
-    h+=`<tr class="cmp-ctrl-row"><td colspan="${span}"><button class="cmp-expand" onclick="cmpToggleExpand()">${CMPV.expanded?'收起全部学科 / 专业对比 ▴':'展开全部学科 / 专业对比 ▾'}</button>${CMPV.expanded?` <label class="cmp-diff"><input type="checkbox" ${CMPV.onlyDiff?'checked':''} onchange="cmpToggleDiff()"> 只看有差异</label>`:''}</td></tr>`;
+    h+=`<tr class="cmp-ctrl-row"><td colspan="${span}"><button class="cmp-expand" onclick="cmpToggleExpand()">${CMPV.expanded?"收起全部学科  /  专业对比  ▴":"展开全部学科  /  专业对比  ▾"}</button>${CMPV.expanded?' (已展开)':' (点击查看全量学科/专业)'}</td></tr>`;
     if(CMPV.expanded)h+=cmpEvalRows(ds,span)+cmpMajorRows(ds,prov,span);
   }else{
-    h+=`<tr class="cmp-sec-row"><td colspan="${span}"><span class="cmp-hint">做完「专业测评」,这里会先按你的方向比</span> <label class="cmp-diff"><input type="checkbox" ${CMPV.onlyDiff?'checked':''} onchange="cmpToggleDiff()"> 只看有差异</label></td></tr>`;
+    h+=`<tr class="cmp-sec-row"><td colspan="${span}"><span class="cmp-hint">做完了「专业测评」,这里会先按你的方向比</span> <label class="cmp-diff"><input type="checkbox" ${CMPV.onlyDiff?'checked':''} onchange="cmpToggleDiff()"> 只看有差异</label></td></tr>`;
     h+=cmpEvalRows(ds,span)+cmpMajorRows(ds,prov,span);
   }
-  return h+'</tbody></table><p class="dim" style="margin:8px 2px 0">学科评估=教育部第四轮(A+~C-);位次/学费为'+prov+'本省口径,仅供参考</p>';
+  var _st=ds.map(function(u){var _ss=u.schoolStats||{};return {baoyan:u.baoyan||0,rank:u.rank||999,city:u.city||"",tier:u.tier||"",masterPts:u.masterPts||0,doctorPts:u.doctorPts||0,eval:u.eval||[],enroll:_ss.enroll||0,employment:_ss.employment||0,tuition:_ss.tuition||0};});
+  var _notes=[];
+  var _rks=_st.map(function(s){return s.rank;}).slice().sort(function(a,b){return a-b;});
+  if(_rks[_rks.length-1]-_rks[0]>5){var _bi=_st.findIndex(function(s){return s.rank===_rks[0];});var _wi=_st.findIndex(function(s){return s.rank===_rks[_rks.length-1];});_notes.push(`综合  排名  领先  偏后  <b class="cmp-ai-vs">${ds[_bi].name}</b> 领先  ${_rks[_rks.length-1]-_rks[0]} 名,  <b class="cmp-ai-vs">${ds[_wi].name}</b> 偏后`);}
+  var _bys=_st.map(function(s){return s.baoyan;}).filter(function(b){return b>0;});
+  if(_bys.length>=2){var _mx=Math.max.apply(null,_bys);var _mn=Math.min.apply(null,_bys);if(_mx-_mn>5){var _hi=_st.findIndex(function(s){return s.baoyan===_mx;});var _lo=_st.findIndex(function(s){return s.baoyan===_mn;});_notes.push(`保研  率  高于  <b class="cmp-ai-vs">${ds[_hi].name}</b> ${_mx.toFixed(1)}% ${(_mx-_mn).toFixed(1)}% ${_mx-_mn>10?"显著":"明显"}</b>`);}}
+  var _td=_st.map(function(s){return s.eval.filter(function(e){return e.grade==="A+"||e.grade==="A";}).map(function(e){return e.discipline;});});
+  if(_td.length>=2){var _sets=_td.map(function(s){return new Set(s);});var _cm=Array.from(_sets[0]).filter(function(x){return _sets.every(function(s){return s.has(x);});});if(_cm.length)_notes.push(`共同  强势  项:  <b class="cmp-ai-vs">${_cm.slice(0,3).join(' ')}</b>`);for(var _si=0;_si<_td.length;_si++){var _un=_td[_si].filter(function(x){return !_sets.some(function(o,oi){return oi!==_si&&o.has(x);});});if(_un.length)_notes.push(`<b class="cmp-ai-vs">${ds[_si].name}</b> 特色  优势: ${_un.slice(0,3).join(' ')}`);}}
+  var _cities=ds.map(function(u){return u.city;});if(new Set(_cities).size>1){var _t1=["北京","上海","广州","深圳"];var _t1us=ds.filter(function(u){return _t1.indexOf(u.city)>=0;});if(_t1us.length)_notes.push(`一线  城市:  ${_t1us.map(function(u){return u.name;}).join(" ")} 实习/就业资源更加丰富`);}
+  var _tui=_st.map(function(s){return s.tuition;}).filter(function(t){return t>0;});
+  if(_tui.length>=2){var _mx=Math.max.apply(null,_tui);var _mn=Math.min.apply(null,_tui);if(_mx-_mn>1000)_notes.push(`学费  差距  <b>${(_mx-_mn).toLocaleString()} 元/年</b>`);}
+  var _enr=_st.map(function(s){return s.enroll;}).filter(function(e){return e>0;});
+  if(_enr.length>=2){var _mx=Math.max.apply(null,_enr);var _mn=Math.min.apply(null,_enr);if(_mx-_mn>500)_notes.push(`招生  人数  差距  ${(_mx-_mn).toLocaleString()},<b class="cmp-ai-vs">${ds[_st.findIndex(function(s){return s.enroll===_mx;})].name}</b> 招生规模较大`);}
+  try{
+    var _userScore=window.__userScore;
+    if(typeof _userScore!=="number"||!_userScore){try{_userScore=parseInt((document.getElementById("scoreInput")||{}).value)||0;}catch(_e){}}
+    if(_userScore>0){
+      var _ranks=ds.map(function(u){var _ls=(u.lines||[]).filter(function(l){return l.granularity==="major"&&l.min_rank;});return _ls.length?_ls.reduce(function(a,b){return a+b.min_rank;},0)/_ls.length:0;});
+      var _userRank=null;
+      try{_userRank=(typeof CMPV!=="undefined"&&CMPV&&CMPV.userRank)?CMPV.userRank:(window.__userRank||(typeof rankOfScore==="function"?rankOfScore(_userScore,prov):null));}catch(_e){}
+      if(_userRank&&_userRank>0){
+        ds.forEach(function(u,i){
+          if(!_ranks[i])return;
+          var _hint="";
+          // ratio = userRank / schoolRank:  越小=用户排名越靠前=越好考; 越大=用户远落后=越难进
+          var _ratio=_userRank/Math.max(_ranks[i],1);
+          if(_ratio<0.3)_hint='<b style="color:#1d9e75">你这个分数完全可以稳进</b>';
+          else if(_ratio<0.7)_hint='<b style="color:#1d9e75">你这个分数有机会冲上</b>';
+          else if(_ratio<1.5)_hint='<b style="color:#c08a2a">你这个分数正好处于该校录取位次附近</b>';
+          else if(_ratio<3)_hint='<b style="color:#c08a2a">你这个分数偏低于该校录取位次</b>';
+          else _hint='<b style="color:#b06030">你这个分数较难进入该校、请谨慎</b>';
+          _notes.unshift(`<b class="cmp-ai-vs">${u.name}</b> 在本省近三年平均录取位次约  <b>${Math.round(_ranks[i]).toLocaleString()}</b>,你本人位次约  <b>${_userRank.toLocaleString()}</b>,${_hint}`);
+        });
+      }
+    }
+  }catch(_e){console.warn("AI 简评: 分数匹配失败",_e);}
+  if(!_notes.length)_notes.push("两校  总体  水平  接近");
+  h+=`<tr><td colspan="${span}" style="padding:0"><div class="cmp-ai"><div class="cmp-ai-head">AI  对比  简评  <b>${prov}</b></div>${_notes.map(n=>`<div class="cmp-ai-item">${n}</div>`).join('')}</div></td></tr>`;
+  return h+`</tbody></table><p class="dim" style="margin:8px 2px 0">学科评估=教育部第四轮(A+~C-);位次/学费为${prov}本省口径,仅供参考</p>`;
 }
 // 学科评估 head-to-head:两校共同评估的学科,等级并排上色,▲ 标更强;按最高档排序
 function cmpEvalRows(ds,span){
@@ -2352,8 +2456,11 @@ async function openCompare(names){
   const prov=(document.getElementById("rp-prov")||{}).value||"浙江";
   document.getElementById("cmp-body").innerHTML='<p class="dim" style="padding:24px;text-align:center">载入中…</p>';
   cmpmask.classList.add("show");cmppanel.classList.add("show");
+  // 预算你的省排位(用于 AI 简评"是否进得去"判断)
+  const _userScore=window.__userScore;
+  const _userRank=(typeof _userScore==="number"&&_userScore>0)?await rankOfScore(_userScore,prov):null;
   const ds=(await Promise.all(names.map(n=>fetch(`${API}/api/uni?name=${encodeURIComponent(n)}&prov=${encodeURIComponent(prov)}`).then(r=>r.json()).catch(()=>null)))).filter(Boolean);
-  CMPV={ds,prov,dirs:null,onlyDiff:false,expanded:false};   // 缓存数据,后续切方向/只看差异/展开就地重渲染,不再重拉
+  CMPV={ds,prov,dirs:null,onlyDiff:false,expanded:false,userScore:_userScore||null,userRank:_userRank};   // 缓存数据,后续切方向/只看差异/展开就地重渲染,不再重拉
   renderCompareBody();
 }
 document.getElementById("fav-compare").addEventListener("click",()=>{
